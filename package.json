@@ -1,0 +1,39 @@
+{
+  "name": "scss-class-finder",
+  "displayName": "SCSS Class Finder",
+  "description": "Find SCSS classes by their resolved selector, handling nesting and & (parent selector)",
+  "version": "0.1.0",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "scssClassFinder.findClass",
+        "title": "SCSS: Find Class by Resolved Selector"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "scssClassFinder.findClass",
+        "key": "ctrl+alt+f",
+        "mac": "cmd+alt+f"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "npx @vscode/vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "@types/vscode": "^1.80.0",
+    "typescript": "^5.3.0"
+  }
+}

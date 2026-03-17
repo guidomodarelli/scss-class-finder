@@ -1,0 +1,353 @@
+import * as vscode from 'vscode';
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+interface SelectorInfo {
+  /** 0-based line number where the selector text starts */
+  line: number;
+  /** Fully resolved CSS selector (e.g. ".bodyCard-header") */
+  resolved: string;
+  /** Raw SCSS selector as written in the source (e.g. "&-header") */
+  raw: string;
+}
+
+interface SearchResult {
+  uri: vscode.Uri;
+  line: number;
+  resolved: string;
+  raw: string;
+  matchType: 'exact' | 'endsWith' | 'contains';
+}
+
+// ---------------------------------------------------------------------------
+// Selector Resolution Engine
+// ---------------------------------------------------------------------------
+
+/**
+ * Split a selector list by commas, respecting parentheses so that
+ * commas inside `:has()`, `:not()`, `:is()` etc. are not treated
+ * as selector separators.
+ */
+function splitSelectors(raw: string): string[] {
+  const results: string[] = [];
+  let current = '';
+  let parenDepth = 0;
+
+  for (const ch of raw) {
+    if (ch === '(') { parenDepth++; }
+    if (ch === ')') { parenDepth--; }
+    if (ch === ',' && parenDepth === 0) {
+      const trimmed = current.trim();
+      if (trimmed) { results.push(trimmed); }
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+
+  const trimmed = current.trim();
+  if (trimmed) { results.push(trimmed); }
+  return results;
+}
+
+/**
+ * Parse an SCSS file's text and return every rule's resolved selector
+ * together with its source line number.
+ *
+ * Handles:
+ *  - `&`-based suffix/prefix concatenation  (`&-header`, `&.active`, `&:hover`)
+ *  - Multi-level nesting                    (`&-main { &-uncollapsed }`)
+ *  - Normal descendant nesting              (`.parent { .child }`)
+ *  - Comma-separated selector lists         (`.a, .b { &-x }`)
+ *  - `@media` / `@supports` / other at-rules (pass-through parent)
+ *  - Line & block comments
+ *  - Strings (single & double quoted)
+ *  - `#{ }` interpolation (not mistaken for a block)
+ *  - Selectors containing `:has()`, `:not()`, etc. with inner commas
+ */
+function resolveSelectors(text: string): SelectorInfo[] {
+  const results: SelectorInfo[] = [];
+
+  let pos = 0;
+  let line = 0;
+
+  // Lexer state
+  let inBlockComment = false;
+  let inLineComment = false;
+  let inString: string | null = null;
+
+  // Selector accumulation
+  let selectorStart = 0;     // character offset where current selector text begins
+  let selectorLine = 0;      // line of first non-WS char of current selector
+  let seenNonWS = false;     // whether we've seen a non-whitespace char since last reset
+
+  // Stack of resolved selectors per nesting depth.
+  // Level 0 = root (virtual empty parent).
+  const parentStack: string[][] = [['']];
+
+  function resetSelector(from: number) {
+    selectorStart = from;
+    seenNonWS = false;
+  }
+
+  while (pos < text.length) {
+    const ch = text[pos];
+    const next = pos + 1 < text.length ? text[pos + 1] : '';
+
+    // ---- strings (consume everything until closing quote) ----
+    if (inString) {
+      if (ch === '\n') { line++; }
+      if (ch === inString && (pos === 0 || text[pos - 1] !== '\\')) {
+        inString = null;
+      }
+      pos++;
+      continue;
+    }
+
+    // ---- block comment ----
+    if (inBlockComment) {
+      if (ch === '\n') { line++; }
+      if (ch === '*' && next === '/') {
+        inBlockComment = false;
+        pos += 2;
+      } else {
+        pos++;
+      }
+      continue;
+    }
+
+    // ---- line comment ----
+    if (inLineComment) {
+      if (ch === '\n') {
+        inLineComment = false;
+        line++;
+        pos++;
+        resetSelector(pos);
+      } else {
+        pos++;
+      }
+      continue;
+    }
+
+    // ---- detect comment starts ----
+    if (ch === '/' && next === '/') {
+      inLineComment = true;
+      pos += 2;
+      continue;
+    }
+    if (ch === '/' && next === '*') {
+      inBlockComment = true;
+      pos += 2;
+      continue;
+    }
+
+    // ---- detect string starts ----
+    if (ch === '"' || ch === "'") {
+      inString = ch;
+      pos++;
+      continue;
+    }
+
+    // ---- newlines ----
+    if (ch === '\n') {
+      line++;
+      pos++;
+      continue;
+    }
+
+    // ---- SCSS interpolation  #{...}  — don't treat inner braces as blocks ----
+    if (ch === '#' && next === '{') {
+      if (!seenNonWS) { seenNonWS = true; selectorLine = line; }
+      pos += 2; // skip  #{
+      let depth = 1;
+      while (pos < text.length && depth > 0) {
+        if (text[pos] === '{') { depth++; }
+        if (text[pos] === '}') { depth--; }
+        if (text[pos] === '\n') { line++; }
+        pos++;
+      }
+      continue;
+    }
+
+    // ---- track first non-WS for selector line ----
+    if (!seenNonWS && ch !== ' ' && ch !== '\t' && ch !== '\r') {
+      seenNonWS = true;
+      selectorLine = line;
+    }
+
+    // ---- opening brace  { ----
+    if (ch === '{') {
+      const rawSelector = text.substring(selectorStart, pos).trim();
+      const isAtRule = rawSelector.startsWith('@');
+
+      if (isAtRule) {
+        // @media, @supports, @keyframes, etc. → keep parent unchanged
+        parentStack.push(parentStack[parentStack.length - 1]);
+      } else if (rawSelector.length > 0) {
+        const parents = parentStack[parentStack.length - 1];
+        const parts = splitSelectors(rawSelector);
+        const resolved: string[] = [];
+
+        for (const sel of parts) {
+          if (sel.includes('&')) {
+            for (const parent of parents) {
+              resolved.push(sel.replace(/&/g, parent));
+            }
+          } else {
+            for (const parent of parents) {
+              resolved.push(parent === '' ? sel : `${parent} ${sel}`);
+            }
+          }
+        }
+
+        for (const r of resolved) {
+          results.push({ line: selectorLine, resolved: r, raw: rawSelector });
+        }
+
+        parentStack.push(resolved);
+      } else {
+        // empty selector (e.g. bare block in a mixin body) — keep parent
+        parentStack.push(parentStack[parentStack.length - 1]);
+      }
+
+      pos++;
+      resetSelector(pos);
+      continue;
+    }
+
+    // ---- closing brace  } ----
+    if (ch === '}') {
+      if (parentStack.length > 1) { parentStack.pop(); }
+      pos++;
+      resetSelector(pos);
+      continue;
+    }
+
+    // ---- semicolon  ;  (end of declaration / @-statement) ----
+    if (ch === ';') {
+      pos++;
+      resetSelector(pos);
+      continue;
+    }
+
+    pos++;
+  }
+
+  return results;
+}
+
+// ---------------------------------------------------------------------------
+// Extension entry point
+// ---------------------------------------------------------------------------
+
+export function activate(context: vscode.ExtensionContext) {
+  const disposable = vscode.commands.registerCommand(
+    'scssClassFinder.findClass',
+    async () => {
+      // Pre-fill input with word under cursor (if any)
+      const editor = vscode.window.activeTextEditor;
+      let defaultValue = '';
+      if (editor) {
+        const range = editor.document.getWordRangeAtPosition(
+          editor.selection.active,
+          /[\w-]+/,
+        );
+        if (range) {
+          defaultValue = editor.document.getText(range);
+        }
+      }
+
+      const input = await vscode.window.showInputBox({
+        prompt: 'SCSS class to find (resolved selector)',
+        placeHolder: 'e.g. bodyCard-header',
+        value: defaultValue,
+      });
+
+      if (!input) { return; }
+
+      const target = input.startsWith('.') ? input : `.${input}`;
+
+      // Find all SCSS/SASS files in the workspace
+      const files = await vscode.workspace.findFiles(
+        '**/*.{scss,sass}',
+        '**/{node_modules,dist,build,coverage}/**',
+      );
+
+      const results: SearchResult[] = [];
+
+      for (const file of files) {
+        const bytes = await vscode.workspace.fs.readFile(file);
+        const text = Buffer.from(bytes).toString('utf8');
+        const selectors = resolveSelectors(text);
+
+        for (const sel of selectors) {
+          let matchType: SearchResult['matchType'] | null = null;
+
+          if (sel.resolved === target) {
+            matchType = 'exact';
+          } else if (sel.resolved.endsWith(target)) {
+            matchType = 'endsWith';
+          } else if (sel.resolved.includes(target)) {
+            matchType = 'contains';
+          }
+
+          if (matchType) {
+            results.push({
+              uri: file,
+              line: sel.line,
+              resolved: sel.resolved,
+              raw: sel.raw,
+              matchType,
+            });
+          }
+        }
+      }
+
+      if (results.length === 0) {
+        vscode.window.showInformationMessage(`No matches found for "${target}"`);
+        return;
+      }
+
+      // Sort: exact → endsWith → contains
+      const order: Record<SearchResult['matchType'], number> = {
+        exact: 0,
+        endsWith: 1,
+        contains: 2,
+      };
+      results.sort((a, b) => order[a.matchType] - order[b.matchType]);
+
+      const iconFor = (t: SearchResult['matchType']) =>
+        t === 'exact' ? '$(check)' : t === 'endsWith' ? '$(arrow-right)' : '$(search)';
+
+      const items = results.map((r) => ({
+        label: `${iconFor(r.matchType)} ${r.resolved}`,
+        description: `${vscode.workspace.asRelativePath(r.uri)}:${r.line + 1}`,
+        detail: `raw: ${r.raw}`,
+        result: r,
+      }));
+
+      const picked = await vscode.window.showQuickPick(items, {
+        matchOnDescription: true,
+        matchOnDetail: true,
+        placeHolder: `${results.length} result(s) for "${target}"`,
+      });
+
+      if (!picked) { return; }
+
+      const doc = await vscode.workspace.openTextDocument(picked.result.uri);
+      const ed = await vscode.window.showTextDocument(doc);
+      const pos = new vscode.Position(picked.result.line, 0);
+      ed.selection = new vscode.Selection(pos, pos);
+      ed.revealRange(
+        new vscode.Range(pos, pos),
+        vscode.TextEditorRevealType.InCenter,
+      );
+    },
+  );
+
+  context.subscriptions.push(disposable);
+}
+
+export function deactivate() {}
