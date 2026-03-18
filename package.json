@@ -40,9 +40,12 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "package": "npx @vscode/vsce package --no-dependencies",
-    "test": "npm run compile && node --test test/*.test.js"
+    "test:unit": "npm run compile && node --test test/*.test.js",
+    "test:integration": "npm run compile && node ./test/integration/runTest.js",
+    "test": "npm run test:unit && npm run test:integration"
   },
   "devDependencies": {
+    "@vscode/test-electron": "^2.5.2",
     "@types/node": "^25.5.0",
     "@types/vscode": "^1.80.0",
     "typescript": "^5.3.0"

@@ -17,6 +17,13 @@ interface QuickPickItemWithResult extends vscode.QuickPickItem {
   result: SearchResult;
 }
 
+interface FindClassCommandOptions {
+  query?: string;
+  autoPickFirst?: boolean;
+  previewOnResultFocus?: boolean;
+  suppressNoResultsMessage?: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Extension entry point
 // ---------------------------------------------------------------------------
@@ -24,10 +31,11 @@ interface QuickPickItemWithResult extends vscode.QuickPickItem {
 export function activate(context: vscode.ExtensionContext) {
   const disposable = vscode.commands.registerCommand(
     'scssClassFinder.findClass',
-    async () => {
+    async (options?: FindClassCommandOptions) => {
       let cachedTarget = '';
       const config = vscode.workspace.getConfiguration('scssClassFinder');
-      const previewOnResultFocus = config.get<boolean>('previewOnResultFocus', true);
+      const previewOnResultFocus = options?.previewOnResultFocus
+        ?? config.get<boolean>('previewOnResultFocus', true);
 
       async function revealResult(result: SearchResult, preview: boolean) {
         const doc = await vscode.workspace.openTextDocument(result.uri);
@@ -87,11 +95,13 @@ export function activate(context: vscode.ExtensionContext) {
         }
       }
 
-      const input = await vscode.window.showInputBox({
-        prompt: 'SCSS class to find (resolved selector)',
-        placeHolder: 'e.g. bodyCard-header',
-        value: defaultValue,
-      });
+      const input = options?.query && options.query.trim().length > 0
+        ? options.query.trim()
+        : await vscode.window.showInputBox({
+          prompt: 'SCSS class to find (resolved selector)',
+          placeHolder: 'e.g. bodyCard-header',
+          value: defaultValue,
+        });
 
       if (!input) { return; }
 
@@ -135,7 +145,9 @@ export function activate(context: vscode.ExtensionContext) {
       }
 
       if (results.length === 0) {
-        vscode.window.showInformationMessage(`No matches found for "${target}"`);
+        if (!options?.suppressNoResultsMessage) {
+          vscode.window.showInformationMessage(`No matches found for "${target}"`);
+        }
         return;
       }
 
@@ -156,6 +168,11 @@ export function activate(context: vscode.ExtensionContext) {
         detail: `raw: ${r.raw}`,
         result: r,
       }));
+
+      if (options?.autoPickFirst) {
+        await revealResult(items[0].result, false);
+        return;
+      }
 
       const picked = await new Promise<QuickPickItemWithResult | undefined>((resolve) => {
         const quickPick = vscode.window.createQuickPick<QuickPickItemWithResult>();
