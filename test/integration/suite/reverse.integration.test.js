@@ -50,7 +50,7 @@ async function run() {
     );
   }
 
-  // --- Ignore import paths in style at-rules ---
+  // --- Resolve aliased @import path to the target style file ---
   {
     const scssUri = vscode.Uri.file(
       path.join(workspaceRoot, 'styles', 'sample.scss'),
@@ -59,9 +59,96 @@ async function run() {
     await vscode.window.showTextDocument(doc);
 
     const text = doc.getText();
-    const importPathIdx = text.indexOf('Search/styles');
-    assert.ok(importPathIdx >= 0, 'Expected to find import path in SCSS fixture');
-    const pos = doc.positionAt(importPathIdx + 'Search/'.length + 1); // position on "styles"
+    const importPathIdx = text.indexOf('Settings/styles');
+    assert.ok(importPathIdx >= 0, 'Expected to find @import path in SCSS fixture');
+    const pos = doc.positionAt(importPathIdx + 'Settings/'.length + 1); // position on "styles"
+
+    const locations = await vscode.commands.executeCommand(
+      'vscode.executeDefinitionProvider',
+      scssUri,
+      pos,
+    );
+
+    assert.ok(
+      locations && locations.length === 1,
+      `Expected one definition result from aliased @import path, got: ${(locations ?? []).map((loc) => loc.uri.fsPath).join(', ')}`,
+    );
+    assert.ok(
+      locations[0].uri.fsPath.endsWith(path.join('app', 'components', 'Settings', 'styles.scss')),
+      `Expected aliased @import to resolve to Settings/styles.scss, got: ${locations[0].uri.fsPath}`,
+    );
+  }
+
+  // --- Resolve aliased @use path and fall back to .sass ---
+  {
+    const scssUri = vscode.Uri.file(
+      path.join(workspaceRoot, 'styles', 'sample.scss'),
+    );
+    const doc = await vscode.workspace.openTextDocument(scssUri);
+    await vscode.window.showTextDocument(doc);
+
+    const text = doc.getText();
+    const usePathIdx = text.indexOf('Typography/styles');
+    assert.ok(usePathIdx >= 0, 'Expected to find @use path in SCSS fixture');
+    const pos = doc.positionAt(usePathIdx + 'Typography/'.length + 1);
+
+    const locations = await vscode.commands.executeCommand(
+      'vscode.executeDefinitionProvider',
+      scssUri,
+      pos,
+    );
+
+    assert.ok(
+      locations && locations.length === 1,
+      `Expected one definition result from aliased @use path, got: ${(locations ?? []).map((loc) => loc.uri.fsPath).join(', ')}`,
+    );
+    assert.ok(
+      locations[0].uri.fsPath.endsWith(path.join('app', 'components', 'Typography', 'styles.sass')),
+      `Expected aliased @use to resolve to Typography/styles.sass, got: ${locations[0].uri.fsPath}`,
+    );
+  }
+
+  // --- Resolve aliased @forward path and fall back to .css ---
+  {
+    const scssUri = vscode.Uri.file(
+      path.join(workspaceRoot, 'styles', 'sample.scss'),
+    );
+    const doc = await vscode.workspace.openTextDocument(scssUri);
+    await vscode.window.showTextDocument(doc);
+
+    const text = doc.getText();
+    const forwardPathIdx = text.indexOf('Theme/styles');
+    assert.ok(forwardPathIdx >= 0, 'Expected to find @forward path in SCSS fixture');
+    const pos = doc.positionAt(forwardPathIdx + 'Theme/'.length + 1);
+
+    const locations = await vscode.commands.executeCommand(
+      'vscode.executeDefinitionProvider',
+      scssUri,
+      pos,
+    );
+
+    assert.ok(
+      locations && locations.length === 1,
+      `Expected one definition result from aliased @forward path, got: ${(locations ?? []).map((loc) => loc.uri.fsPath).join(', ')}`,
+    );
+    assert.ok(
+      locations[0].uri.fsPath.endsWith(path.join('app', 'components', 'Theme', 'styles.css')),
+      `Expected aliased @forward to resolve to Theme/styles.css, got: ${locations[0].uri.fsPath}`,
+    );
+  }
+
+  // --- Unknown aliases should not fall back to reverse usage search ---
+  {
+    const scssUri = vscode.Uri.file(
+      path.join(workspaceRoot, 'styles', 'sample.scss'),
+    );
+    const doc = await vscode.workspace.openTextDocument(scssUri);
+    await vscode.window.showTextDocument(doc);
+
+    const text = doc.getText();
+    const unknownPathIdx = text.indexOf('Missing/styles');
+    assert.ok(unknownPathIdx >= 0, 'Expected to find unknown alias path in SCSS fixture');
+    const pos = doc.positionAt(unknownPathIdx + 'Missing/'.length + 1);
 
     const locations = await vscode.commands.executeCommand(
       'vscode.executeDefinitionProvider',
@@ -71,7 +158,7 @@ async function run() {
 
     assert.ok(
       !locations || locations.length === 0,
-      `Expected no reverse definition results from import path, got: ${(locations ?? []).map((loc) => loc.uri.fsPath).join(', ')}`,
+      `Expected no definition results for unknown aliased import path, got: ${(locations ?? []).map((loc) => loc.uri.fsPath).join(', ')}`,
     );
   }
 

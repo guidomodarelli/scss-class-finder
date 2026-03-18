@@ -1,4 +1,7 @@
-@import '@root/app/components/Search/styles';
+@import '~@root/app/components/Settings/styles';
+@use '@root/app/components/Typography/styles' as *;
+@forward '@root/app/components/Theme/styles';
+@import '~@missing/app/components/Missing/styles';
 
 .card {
   &-header {

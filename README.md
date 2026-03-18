@@ -32,6 +32,7 @@ And from that SCSS rule, `F12` / `Cmd+Click` navigates to:
 - 📋 **Comma-separated selector lists** — `.a, .b { &-x }` correctly expands to `.a-x` and `.b-x`.
 - 🎯 **Smart matching** — results are filtered to **exact** and **endsWith** matches only, avoiding noisy partial hits.
 - 🧭 **Go to Definition (forward)** — use `F12` / `Cmd+Click` on a CSS class name in JS, TS, JSX, TSX, or HTML files to jump directly to its SCSS definition.
+- 🧷 **Go to Definition on style imports** — use `F12` / `Cmd+Click` on aliased paths inside `@import`, `@use`, or `@forward` to jump to the target stylesheet resolved from `_moduleAliases`.
 - 🔄 **Go to Definition (reverse)** — use `F12` / `Cmd+Click` on a selector in SCSS, SASS, or CSS files to jump to where that class is used in code.
 - 🔎 **Find All References** — use `Shift+F12` on a selector in SCSS/CSS to see all usages across JS/TS/JSX/TSX/HTML files.
 - 🏗️ **Structural matching** — reverse navigation respects CSS combinators: descendant (` `), child (`>`), adjacent sibling (`+`), and general sibling (`~`).
@@ -60,6 +61,10 @@ In any JS, TS, JSX, TSX, or HTML file, place your cursor on a CSS class name and
 ### Go to Definition (reverse: styles → code)
 
 In any SCSS, SASS, or CSS file, place your cursor on a selector and press `F12` (or `Cmd+Click`) to jump to its usage in JS/TS/JSX/TSX/HTML.
+
+### Go to Definition on style imports
+
+In any SCSS, SASS, or CSS file, place your cursor on an aliased path inside `@import`, `@use`, or `@forward` and press `F12` (or `Cmd+Click`) to jump to the resolved stylesheet file.
 
 ### Find Class Usages
 

@@ -4,6 +4,10 @@ import { resolveSelectors, splitSelectors } from './selectorResolver';
 import { parseSelectorToIR, getTargetClasses } from './selectorIR';
 import { extractClassUsages, ExtractionResult } from './classExtractor';
 import { matchSelectorChainMulti, MatchResult, MatchConfidence } from './structuralMatcher';
+import {
+  findStyleImportReferenceAtPosition,
+  resolveStyleImportDefinition,
+} from './styleImportResolver';
 
 // ---------------------------------------------------------------------------
 // .gitignore-aware file discovery
@@ -618,7 +622,7 @@ export function activate(context: vscode.ExtensionContext) {
     position: vscode.Position,
   ): string | null {
     const lineText = document.lineAt(position.line).text;
-    if (isIgnoredStyleAtRuleStringPosition(lineText, position.character)) {
+    if (findStyleImportReferenceAtPosition(lineText, position.character)) {
       return null;
     }
 
@@ -660,50 +664,6 @@ export function activate(context: vscode.ExtensionContext) {
     return null;
   }
 
-  function isIgnoredStyleAtRuleStringPosition(lineText: string, column: number): boolean {
-    if (!/^\s*@(?:import|use|forward)\b/.test(lineText)) {
-      return false;
-    }
-
-    return isPositionInsideQuotedString(lineText, column);
-  }
-
-  function isPositionInsideQuotedString(text: string, column: number): boolean {
-    let activeQuote: '"' | '\'' | null = null;
-    let isEscaped = false;
-
-    for (let index = 0; index < text.length; index++) {
-      const char = text[index];
-
-      if (activeQuote && index === column) {
-        return true;
-      }
-
-      if (isEscaped) {
-        isEscaped = false;
-        continue;
-      }
-
-      if (char === '\\') {
-        isEscaped = true;
-        continue;
-      }
-
-      if (activeQuote) {
-        if (char === activeQuote) {
-          activeQuote = null;
-        }
-        continue;
-      }
-
-      if (char === '"' || char === '\'') {
-        activeQuote = char;
-      }
-    }
-
-    return !!activeQuote && column >= text.length;
-  }
-
   // ---------------------------------------------------------------------------
   // Reverse DefinitionProvider: Go from SCSS/CSS → usage in JS/TS/HTML
   // ---------------------------------------------------------------------------
@@ -719,6 +679,25 @@ export function activate(context: vscode.ExtensionContext) {
         document: vscode.TextDocument,
         position: vscode.Position,
       ): Promise<vscode.Location[] | null> {
+        const lineText = document.lineAt(position.line).text;
+        const styleImportReference = findStyleImportReferenceAtPosition(
+          lineText,
+          position.character,
+        );
+        if (styleImportReference) {
+          const workspaceFolderPath = vscode.workspace.getWorkspaceFolder(document.uri)?.uri.fsPath;
+          const resolvedImportPath = await resolveStyleImportDefinition({
+            documentPath: document.uri.fsPath,
+            workspaceFolderPath,
+            importPath: styleImportReference.importPath,
+          });
+          if (!resolvedImportPath) { return null; }
+
+          return [
+            new vscode.Location(vscode.Uri.file(resolvedImportPath), new vscode.Position(0, 0)),
+          ];
+        }
+
         const selector = resolveTargetSelector(document, position);
         if (!selector) { return null; }
 
