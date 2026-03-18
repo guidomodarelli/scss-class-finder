@@ -341,6 +341,75 @@ export function activate(context: vscode.ExtensionContext) {
     return results;
   }
 
+  // ---------------------------------------------------------------------------
+  // Fallback: literal exact class token search
+  // ---------------------------------------------------------------------------
+
+  function isClassTokenChar(ch: string | undefined): boolean {
+    return !!ch && /[A-Za-z0-9_-]/.test(ch);
+  }
+
+  function findExactClassTokenOffsets(text: string, token: string): number[] {
+    if (!token) { return []; }
+
+    const offsets: number[] = [];
+    let from = 0;
+
+    while (from < text.length) {
+      const idx = text.indexOf(token, from);
+      if (idx < 0) { break; }
+
+      const prev = idx > 0 ? text[idx - 1] : undefined;
+      const nextIdx = idx + token.length;
+      const next = nextIdx < text.length ? text[nextIdx] : undefined;
+
+      if (!isClassTokenChar(prev) && !isClassTokenChar(next)) {
+        offsets.push(idx);
+      }
+
+      from = idx + token.length;
+    }
+
+    return offsets;
+  }
+
+  async function findLiteralClassTokenLocations(tokens: string[]): Promise<vscode.Location[]> {
+    const uniqueTokens = Array.from(new Set(tokens.filter(Boolean)));
+    if (uniqueTokens.length === 0) { return []; }
+
+    const files = await vscode.workspace.findFiles(
+      '**/*.{js,jsx,ts,tsx,html,htm}',
+      '**/{node_modules,dist,build,coverage}/**',
+    );
+
+    const dedup = new Map<string, vscode.Location>();
+
+    for (const file of files) {
+      const bytes = await vscode.workspace.fs.readFile(file);
+      const text = Buffer.from(bytes).toString('utf8');
+
+      for (const token of uniqueTokens) {
+        const offsets = findExactClassTokenOffsets(text, token);
+        for (const offset of offsets) {
+          // Convert byte offset to line/column
+          let line = 0;
+          let lastNL = -1;
+          for (let i = 0; i < offset && i < text.length; i++) {
+            if (text[i] === '\n') { line++; lastNL = i; }
+          }
+          const col = offset - lastNL - 1;
+          const pos = new vscode.Position(line, col);
+          const key = `${file.toString()}:${line}:${col}`;
+          if (!dedup.has(key)) {
+            dedup.set(key, new vscode.Location(file, pos));
+          }
+        }
+      }
+    }
+
+    return Array.from(dedup.values());
+  }
+
   // Invalidate cache on file changes
   const templateWatcher = vscode.workspace.createFileSystemWatcher(
     '**/*.{js,jsx,ts,tsx,html,htm}',
@@ -421,7 +490,12 @@ export function activate(context: vscode.ExtensionContext) {
         const extractions = await getAllExtractions();
         const matches = matchSelectorChainMulti(chain, extractions);
 
-        if (matches.length === 0) { return null; }
+        if (matches.length === 0) {
+          // Fallback: exact literal class token search when structural matching
+          // found nothing (e.g. class used in a dynamic expression or plain string).
+          const fallbackLocations = await findLiteralClassTokenLocations(targetClasses);
+          return fallbackLocations.length > 0 ? fallbackLocations : null;
+        }
 
         return matches.map((m) => {
           const uri = vscode.Uri.file(m.filePath);

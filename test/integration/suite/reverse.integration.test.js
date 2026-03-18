@@ -83,6 +83,40 @@ async function run() {
       'Expected at least one reverse definition for ".btn" from SCSS',
     );
   }
+
+  // --- Literal fallback: structural match empty → exact token search ---
+  {
+    const scssUri = vscode.Uri.file(
+      path.join(workspaceRoot, 'styles', 'sample.scss'),
+    );
+    const doc = await vscode.workspace.openTextDocument(scssUri);
+    await vscode.window.showTextDocument(doc);
+
+    const text = doc.getText();
+    const literalIdx = text.indexOf('.literal-only');
+    assert.ok(literalIdx >= 0, 'Expected to find ".literal-only" in SCSS fixture');
+    const pos = doc.positionAt(literalIdx + 1); // position on "literal-only"
+
+    const locations = await vscode.commands.executeCommand(
+      'vscode.executeDefinitionProvider',
+      scssUri,
+      pos,
+    );
+
+    assert.ok(
+      locations && locations.length > 0,
+      'Expected reverse definition fallback results for ".literal-only"',
+    );
+
+    const hasSampleTarget = locations.some((loc) =>
+      loc.uri.fsPath.endsWith(path.join('components', 'Sample.jsx')),
+    );
+
+    assert.ok(
+      hasSampleTarget,
+      'Expected at least one fallback location in components/Sample.jsx',
+    );
+  }
 }
 
 module.exports = { run };

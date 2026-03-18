@@ -1,3 +1,6 @@
+// Used as a plain string, not in class/className — validates literal fallback
+const literalOnlyToken = 'literal-only';
+
 export function Sample() {
   return (
     <div className="card-header">
