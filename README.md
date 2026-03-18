@@ -4,6 +4,22 @@ VS Code extension to find SCSS classes by their **resolved selector**, handling 
 
 When working with deeply nested SCSS, the actual CSS selector can be hard to trace back to its source. This extension resolves all selectors in your workspace and lets you search by the final compiled form.
 
+## 💡 Why?
+
+The goal is not "search a string in files". The goal is:
+
+> Given a final selector like `.Bodycard-header`, find which SCSS rules generate it — even if they are written in nested form with `&`.
+
+For example, searching `Bodycard-header` finds this:
+
+```scss
+.Bodycard {
+  &-header { color: red; }
+}
+```
+
+because the resolved selector is `.Bodycard-header`.
+
 ## ✨ Features
 
 - 🔗 **Resolves nested selectors** — `&`-based concatenation (`&-header`, `&.active`, `&:hover`), multi-level nesting, and descendant selectors.
