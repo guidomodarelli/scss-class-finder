@@ -18,6 +18,16 @@
         "title": "SCSS: Find Class by Resolved Selector"
       }
     ],
+    "configuration": {
+      "title": "SCSS Class Finder",
+      "properties": {
+        "scssClassFinder.previewOnResultFocus": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically preview and reveal the selected result while navigating the results list."
+        }
+      }
+    },
     "keybindings": [
       {
         "command": "scssClassFinder.findClass",
