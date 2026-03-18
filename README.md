@@ -40,7 +40,7 @@ And from that SCSS rule, `F12` / `Cmd+Click` navigates to:
 - 👁️ **Live preview** — navigating the results list previews each match in the editor.
 - ✏️ **Cursor-aware** — pre-fills the search input with the word under the cursor.
 - 🪶 **Zero dependencies** — custom single-pass lexer/parser, no external libraries. The packaged extension weighs ~15 KB.
-- 🚫 **Skips noise** — ignores `node_modules`, `dist`, `build`, and `coverage` directories.
+- 🚫 **Skips noise** — ignores `node_modules`, `dist`, `build`, `coverage`, and all paths listed in `.gitignore`.
 - 🧩 **Handles edge cases** — comments, strings, `@media`/`@supports` at-rules, and `#{}` interpolation.
 - ⚡ **Cached & incremental** — template file extractions are cached in memory and invalidated by file watchers.
 

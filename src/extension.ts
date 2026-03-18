@@ -1,8 +1,156 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { resolveSelectors, splitSelectors } from './selectorResolver';
 import { parseSelectorToIR, getTargetClasses } from './selectorIR';
 import { extractClassUsages, ExtractionResult } from './classExtractor';
 import { matchSelectorChainMulti, MatchResult, MatchConfidence } from './structuralMatcher';
+
+// ---------------------------------------------------------------------------
+// .gitignore-aware file discovery
+// ---------------------------------------------------------------------------
+
+/**
+ * Minimal .gitignore matcher — supports:
+ *   - blank lines & comments (#)
+ *   - negation (!) — tracked but not applied (conservative: we skip negated)
+ *   - directory markers (trailing /)
+ *   - leading / (root-relative)
+ *   - wildcards: *, **, ?
+ *   - character classes: [abc]
+ *
+ * Converts each pattern to a RegExp tested against the workspace-relative
+ * POSIX path of the file.
+ */
+function parseGitignorePatterns(content: string): RegExp[] {
+  const regexps: RegExp[] = [];
+
+  for (let line of content.split(/\r?\n/)) {
+    line = line.trim();
+    if (!line || line.startsWith('#')) { continue; }
+    // Skip negation patterns (conservative — don't un-ignore)
+    if (line.startsWith('!')) { continue; }
+
+    // Remove trailing spaces (unless escaped)
+    line = line.replace(/(?<!\\)\s+$/, '');
+
+    let pattern = line;
+    let anchored = false;
+
+    // Leading / means anchored to root
+    if (pattern.startsWith('/')) {
+      anchored = true;
+      pattern = pattern.slice(1);
+    }
+
+    // Trailing / means directory only — for our purposes we match anything
+    // under that directory, so append ** implicitly
+    if (pattern.endsWith('/')) {
+      pattern += '**';
+    }
+
+    // Escape regex special chars except our glob wildcards
+    let regSrc = '';
+    let i = 0;
+    while (i < pattern.length) {
+      const ch = pattern[i];
+      if (ch === '*' && pattern[i + 1] === '*') {
+        if (pattern[i + 2] === '/') {
+          regSrc += '(?:.+/)?';
+          i += 3;
+        } else {
+          regSrc += '.*';
+          i += 2;
+        }
+      } else if (ch === '*') {
+        regSrc += '[^/]*';
+        i++;
+      } else if (ch === '?') {
+        regSrc += '[^/]';
+        i++;
+      } else if (ch === '[') {
+        const close = pattern.indexOf(']', i + 1);
+        if (close >= 0) {
+          regSrc += pattern.substring(i, close + 1);
+          i = close + 1;
+        } else {
+          regSrc += '\\[';
+          i++;
+        }
+      } else if ('.+^${}()|\\'.includes(ch)) {
+        regSrc += '\\' + ch;
+        i++;
+      } else {
+        regSrc += ch;
+        i++;
+      }
+    }
+
+    // If the pattern contains a slash (besides trailing) it's anchored
+    if (pattern.includes('/')) {
+      anchored = true;
+    }
+
+    if (anchored) {
+      regexps.push(new RegExp('^' + regSrc + '(/.*)?$'));
+    } else {
+      // Unanchored: can match in any subdirectory
+      regexps.push(new RegExp('(^|/)' + regSrc + '(/.*)?$'));
+    }
+  }
+
+  return regexps;
+}
+
+interface GitignoreFilter {
+  root: string;
+  patterns: RegExp[];
+}
+
+async function loadGitignoreFilters(): Promise<GitignoreFilter[]> {
+  const folders = vscode.workspace.workspaceFolders ?? [];
+  const filters: GitignoreFilter[] = [];
+
+  for (const folder of folders) {
+    const gitignoreUri = vscode.Uri.joinPath(folder.uri, '.gitignore');
+    try {
+      const bytes = await vscode.workspace.fs.readFile(gitignoreUri);
+      const content = Buffer.from(bytes).toString('utf8');
+      const patterns = parseGitignorePatterns(content);
+      if (patterns.length > 0) {
+        filters.push({ root: folder.uri.fsPath, patterns });
+      }
+    } catch {
+      // No .gitignore — skip
+    }
+  }
+
+  return filters;
+}
+
+function isIgnoredByGitignore(uri: vscode.Uri, filters: GitignoreFilter[]): boolean {
+  for (const filter of filters) {
+    const rel = path.relative(filter.root, uri.fsPath);
+    if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) { continue; }
+
+    const posixRel = rel.split(path.sep).join('/');
+    for (const re of filter.patterns) {
+      if (re.test(posixRel)) { return true; }
+    }
+  }
+  return false;
+}
+
+async function findWorkspaceFiles(includeGlob: string): Promise<vscode.Uri[]> {
+  const files = await vscode.workspace.findFiles(
+    includeGlob,
+    '**/{node_modules,dist,build,coverage}/**',
+  );
+
+  const filters = await loadGitignoreFilters();
+  if (filters.length === 0) { return files; }
+
+  return files.filter((f) => !isIgnoredByGitignore(f, filters));
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -32,10 +180,7 @@ interface FindClassCommandOptions {
 // ---------------------------------------------------------------------------
 
 async function findMatchingSelectors(target: string): Promise<SearchResult[]> {
-  const files = await vscode.workspace.findFiles(
-    '**/*.{scss,sass}',
-    '**/{node_modules,dist,build,coverage}/**',
-  );
+  const files = await findWorkspaceFiles('**/*.{scss,sass}');
 
   const results: SearchResult[] = [];
 
@@ -326,10 +471,7 @@ export function activate(context: vscode.ExtensionContext) {
   }
 
   async function getAllExtractions(): Promise<ExtractionResult[]> {
-    const files = await vscode.workspace.findFiles(
-      '**/*.{js,jsx,ts,tsx,html,htm}',
-      '**/{node_modules,dist,build,coverage}/**',
-    );
+    const files = await findWorkspaceFiles('**/*.{js,jsx,ts,tsx,html,htm}');
 
     const results: ExtractionResult[] = [];
     for (const file of files) {
@@ -377,10 +519,7 @@ export function activate(context: vscode.ExtensionContext) {
     const uniqueTokens = Array.from(new Set(tokens.filter(Boolean)));
     if (uniqueTokens.length === 0) { return []; }
 
-    const files = await vscode.workspace.findFiles(
-      '**/*.{js,jsx,ts,tsx,html,htm}',
-      '**/{node_modules,dist,build,coverage}/**',
-    );
+    const files = await findWorkspaceFiles('**/*.{js,jsx,ts,tsx,html,htm}');
 
     const dedup = new Map<string, vscode.Location>();
 
