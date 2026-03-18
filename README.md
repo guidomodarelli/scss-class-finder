@@ -128,8 +128,17 @@ npm run package
 
 ## 📦 Install from Source
 
+Use the installer script so the packaged `.vsix` name is always resolved from `package.json`:
+
 ```bash
-npm run compile
-npx @vscode/vsce package --no-dependencies --allow-missing-repository
-code --install-extension scss-class-finder-0.1.0.vsix
+npm install
+./install.sh
 ```
+
+The script:
+
+- compiles the extension,
+- packages it with `vsce`,
+- reads the extension `name` and `version` from `package.json`,
+- installs the generated `.vsix` with the `code` CLI,
+- uses `jq` when available and falls back to `cut` if `jq` is not installed.
