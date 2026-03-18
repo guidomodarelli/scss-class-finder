@@ -50,6 +50,31 @@ async function run() {
     );
   }
 
+  // --- Ignore import paths in style at-rules ---
+  {
+    const scssUri = vscode.Uri.file(
+      path.join(workspaceRoot, 'styles', 'sample.scss'),
+    );
+    const doc = await vscode.workspace.openTextDocument(scssUri);
+    await vscode.window.showTextDocument(doc);
+
+    const text = doc.getText();
+    const importPathIdx = text.indexOf('Search/styles');
+    assert.ok(importPathIdx >= 0, 'Expected to find import path in SCSS fixture');
+    const pos = doc.positionAt(importPathIdx + 'Search/'.length + 1); // position on "styles"
+
+    const locations = await vscode.commands.executeCommand(
+      'vscode.executeDefinitionProvider',
+      scssUri,
+      pos,
+    );
+
+    assert.ok(
+      !locations || locations.length === 0,
+      `Expected no reverse definition results from import path, got: ${(locations ?? []).map((loc) => loc.uri.fsPath).join(', ')}`,
+    );
+  }
+
   // --- Verify the findClassUsages command is registered ---
   {
     const commands = await vscode.commands.getCommands(true);

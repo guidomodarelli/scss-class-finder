@@ -617,6 +617,11 @@ export function activate(context: vscode.ExtensionContext) {
     document: vscode.TextDocument,
     position: vscode.Position,
   ): string | null {
+    const lineText = document.lineAt(position.line).text;
+    if (isIgnoredStyleAtRuleStringPosition(lineText, position.character)) {
+      return null;
+    }
+
     const text = document.getText();
     const selectors = resolveSelectors(text);
 
@@ -653,6 +658,50 @@ export function activate(context: vscode.ExtensionContext) {
     }
 
     return null;
+  }
+
+  function isIgnoredStyleAtRuleStringPosition(lineText: string, column: number): boolean {
+    if (!/^\s*@(?:import|use|forward)\b/.test(lineText)) {
+      return false;
+    }
+
+    return isPositionInsideQuotedString(lineText, column);
+  }
+
+  function isPositionInsideQuotedString(text: string, column: number): boolean {
+    let activeQuote: '"' | '\'' | null = null;
+    let isEscaped = false;
+
+    for (let index = 0; index < text.length; index++) {
+      const char = text[index];
+
+      if (activeQuote && index === column) {
+        return true;
+      }
+
+      if (isEscaped) {
+        isEscaped = false;
+        continue;
+      }
+
+      if (char === '\\') {
+        isEscaped = true;
+        continue;
+      }
+
+      if (activeQuote) {
+        if (char === activeQuote) {
+          activeQuote = null;
+        }
+        continue;
+      }
+
+      if (char === '"' || char === '\'') {
+        activeQuote = char;
+      }
+    }
+
+    return !!activeQuote && column >= text.length;
   }
 
   // ---------------------------------------------------------------------------
