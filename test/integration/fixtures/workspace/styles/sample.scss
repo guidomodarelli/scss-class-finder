@@ -7,3 +7,13 @@
     font-weight: 600;
   }
 }
+
+.btn {
+  &:hover {
+    color: blue;
+  }
+
+  &:has(.icon) {
+    padding-left: 8px;
+  }
+}

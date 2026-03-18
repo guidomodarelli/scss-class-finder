@@ -79,3 +79,77 @@ $className: 'chip';
   assert.ok(selectors.includes('.#{ $className }'));
   assert.ok(selectors.includes('.#{ $className }-label'));
 });
+
+test('resolveSelectors handles pseudo-class suffixes with &', () => {
+  const scss = `
+.btn {
+  &:hover { color: red; }
+  &:focus { outline: none; }
+  &::before { content: ''; }
+}
+`;
+
+  const selectors = resolveSelectors(scss).map((s) => s.resolved);
+
+  assert.ok(selectors.includes('.btn'));
+  assert.ok(selectors.includes('.btn:hover'));
+  assert.ok(selectors.includes('.btn:focus'));
+  assert.ok(selectors.includes('.btn::before'));
+});
+
+test('resolveSelectors handles chained pseudo-classes', () => {
+  const scss = `
+.input {
+  &:focus:not(:disabled) { border-color: blue; }
+}
+`;
+
+  const selectors = resolveSelectors(scss).map((s) => s.resolved);
+
+  assert.ok(selectors.includes('.input'));
+  assert.ok(selectors.includes('.input:focus:not(:disabled)'));
+});
+
+test('resolveSelectors handles :has() pseudo-function', () => {
+  const scss = `
+.list {
+  &:has(.item) { display: flex; }
+}
+`;
+
+  const selectors = resolveSelectors(scss).map((s) => s.resolved);
+
+  assert.ok(selectors.includes('.list'));
+  assert.ok(selectors.includes('.list:has(.item)'));
+});
+
+test('resolveSelectors handles :is() and :where() with comma args', () => {
+  const scss = `
+.nav {
+  &:is(.primary, .secondary) { font-weight: bold; }
+  &:where(.active, .current) { color: red; }
+}
+`;
+
+  const selectors = resolveSelectors(scss).map((s) => s.resolved);
+
+  assert.ok(selectors.includes('.nav'));
+  assert.ok(selectors.includes('.nav:is(.primary, .secondary)'));
+  assert.ok(selectors.includes('.nav:where(.active, .current)'));
+});
+
+test('resolveSelectors handles nested pseudo-classes at multiple levels', () => {
+  const scss = `
+.card {
+  &-header {
+    &:hover { color: blue; }
+  }
+}
+`;
+
+  const selectors = resolveSelectors(scss).map((s) => s.resolved);
+
+  assert.ok(selectors.includes('.card'));
+  assert.ok(selectors.includes('.card-header'));
+  assert.ok(selectors.includes('.card-header:hover'));
+});

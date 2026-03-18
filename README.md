@@ -50,6 +50,7 @@ In any JS, TS, JSX, TSX, or HTML file, place your cursor on a CSS class name and
 | Icon | Type | Description |
 |------|------|-------------|
 | ✅ | **exact** | Resolved selector equals the search term exactly |
+| 🔔 | **pseudoSuffix** | Selector starts with the search term followed by a pseudo-class/element (e.g. searching `.btn` finds `.btn:hover`, `.btn:has(...)`, `.btn::before`) |
 | ➡️ | **endsWith** | Resolved selector ends with the search term as a separate segment (e.g. `.parent .child` matches `.child`) |
 
 ## ⚙️ Settings

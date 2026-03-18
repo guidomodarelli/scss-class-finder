@@ -120,6 +120,73 @@ async function run() {
       `Expected definition in sample.scss, got ${loc.uri.fsPath}`,
     );
   }
+
+  // --- pseudoSuffix: "btn" in JSX → .btn (exact) + .btn:hover + .btn:has(.icon) in SCSS ---
+  {
+    const jsxUri = vscode.Uri.file(
+      path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, 'components', 'Sample.jsx'),
+    );
+    const doc = await vscode.workspace.openTextDocument(jsxUri);
+    await vscode.window.showTextDocument(doc);
+
+    const text = doc.getText();
+    const idx = text.indexOf('"btn"');
+    assert.ok(idx >= 0, 'Expected to find "btn" in JSX fixture');
+    const pos = doc.positionAt(idx + 1);
+
+    const locations = await vscode.commands.executeCommand(
+      'vscode.executeDefinitionProvider',
+      jsxUri,
+      pos,
+    );
+
+    assert.ok(
+      locations && locations.length >= 3,
+      `Expected at least 3 definitions for "btn" (exact + pseudo-suffixes), got ${locations ? locations.length : 0}`,
+    );
+
+    // All results should point to sample.scss
+    for (const loc of locations) {
+      assert.ok(
+        loc.uri.fsPath.endsWith(path.join('styles', 'sample.scss')),
+        `Expected definition in sample.scss, got ${loc.uri.fsPath}`,
+      );
+    }
+  }
+
+  // --- Negative: "icon" should NOT match .btn:has(.icon) as a definition ---
+  {
+    const jsxUri = vscode.Uri.file(
+      path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, 'components', 'Sample.jsx'),
+    );
+    const doc = await vscode.workspace.openTextDocument(jsxUri);
+    await vscode.window.showTextDocument(doc);
+
+    // "icon" appears inside :has(.icon), but .icon is not a standalone selector
+    const locations = await vscode.commands.executeCommand(
+      'vscode.executeDefinitionProvider',
+      jsxUri,
+      new vscode.Position(0, 0), // dummy position, we use executeCommand directly
+    );
+
+    // We need to test via command since "icon" isn't actually in the JSX.
+    // Instead, verify that searching ".icon" via the command yields no results.
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+
+    await vscode.commands.executeCommand('scssClassFinder.findClass', {
+      query: 'icon',
+      autoPickFirst: true,
+      previewOnResultFocus: false,
+      suppressNoResultsMessage: true,
+    });
+
+    const iconEditor = vscode.window.activeTextEditor;
+    assert.equal(
+      iconEditor,
+      undefined,
+      'Negative: ".icon" should not match — it only appears inside :has(.icon), not as a standalone selector',
+    );
+  }
 }
 
 module.exports = { run };

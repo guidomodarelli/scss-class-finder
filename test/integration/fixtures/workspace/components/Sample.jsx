@@ -3,6 +3,7 @@ export function Sample() {
     <div className="card-header">
       <span className="title">Hello</span>
       <span className="nonexistent">World</span>
+      <button className="btn">Click</button>
     </div>
   );
 }

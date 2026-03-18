@@ -70,6 +70,21 @@ async function run() {
     undefined,
     'contains match should not return results — ".header" is neither exact nor endsWith for ".card-header"',
   );
+
+  // --- pseudoSuffix match: searching "btn" should find ".btn" (exact) and ".btn:hover", ".btn:has(.icon)" ---
+  await vscode.commands.executeCommand('scssClassFinder.findClass', {
+    query: 'btn',
+    autoPickFirst: true,
+    previewOnResultFocus: false,
+    suppressNoResultsMessage: true,
+  });
+
+  const pseudoEditor = vscode.window.activeTextEditor;
+  assert.ok(pseudoEditor, 'Expected an active editor for pseudoSuffix match on "btn"');
+  assert.ok(
+    pseudoEditor.document.fileName.endsWith(path.join('styles', 'sample.scss')),
+    `pseudoSuffix: Expected sample.scss, got ${pseudoEditor.document.fileName}`,
+  );
 }
 
 module.exports = { run };
