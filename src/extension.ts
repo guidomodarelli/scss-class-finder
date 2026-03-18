@@ -1,5 +1,8 @@
 import * as vscode from 'vscode';
 import { resolveSelectors, splitSelectors } from './selectorResolver';
+import { parseSelectorToIR, getTargetClasses } from './selectorIR';
+import { extractClassUsages, ExtractionResult } from './classExtractor';
+import { matchSelectorChainMulti, MatchResult, MatchConfidence } from './structuralMatcher';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -290,6 +293,252 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(definitionProvider);
+
+  // ---------------------------------------------------------------------------
+  // Template file extraction cache
+  // ---------------------------------------------------------------------------
+
+  const extractionCache = new Map<string, ExtractionResult>();
+
+  function langFromUri(uri: vscode.Uri): 'html' | 'jsx' | 'tsx' | 'js' | 'ts' | null {
+    const p = uri.fsPath;
+    if (p.endsWith('.html') || p.endsWith('.htm')) { return 'html'; }
+    if (p.endsWith('.jsx')) { return 'jsx'; }
+    if (p.endsWith('.tsx')) { return 'tsx'; }
+    if (p.endsWith('.js') || p.endsWith('.mjs') || p.endsWith('.cjs')) { return 'js'; }
+    if (p.endsWith('.ts') || p.endsWith('.mts') || p.endsWith('.cts')) { return 'ts'; }
+    return null;
+  }
+
+  async function getExtraction(uri: vscode.Uri): Promise<ExtractionResult | null> {
+    const key = uri.toString();
+    const cached = extractionCache.get(key);
+    if (cached) { return cached; }
+
+    const lang = langFromUri(uri);
+    if (!lang) { return null; }
+
+    const bytes = await vscode.workspace.fs.readFile(uri);
+    const text = Buffer.from(bytes).toString('utf8');
+    const result = extractClassUsages(text, uri.fsPath, lang);
+    extractionCache.set(key, result);
+    return result;
+  }
+
+  async function getAllExtractions(): Promise<ExtractionResult[]> {
+    const files = await vscode.workspace.findFiles(
+      '**/*.{js,jsx,ts,tsx,html,htm}',
+      '**/{node_modules,dist,build,coverage}/**',
+    );
+
+    const results: ExtractionResult[] = [];
+    for (const file of files) {
+      const ext = await getExtraction(file);
+      if (ext && ext.nodes.length > 0) {
+        results.push(ext);
+      }
+    }
+    return results;
+  }
+
+  // Invalidate cache on file changes
+  const templateWatcher = vscode.workspace.createFileSystemWatcher(
+    '**/*.{js,jsx,ts,tsx,html,htm}',
+  );
+  templateWatcher.onDidChange((uri) => extractionCache.delete(uri.toString()));
+  templateWatcher.onDidDelete((uri) => extractionCache.delete(uri.toString()));
+  templateWatcher.onDidCreate(() => { /* new files are loaded on demand */ });
+  context.subscriptions.push(templateWatcher);
+
+  // ---------------------------------------------------------------------------
+  // Helper: resolve selector under cursor in a style file
+  // ---------------------------------------------------------------------------
+
+  function resolveTargetSelector(
+    document: vscode.TextDocument,
+    position: vscode.Position,
+  ): string | null {
+    const text = document.getText();
+    const selectors = resolveSelectors(text);
+
+    // Find the nearest selector to the current line
+    let best: { resolved: string; distance: number } | null = null;
+
+    for (const sel of selectors) {
+      const distance = Math.abs(sel.line - position.line);
+      if (best === null || distance < best.distance) {
+        best = { resolved: sel.resolved, distance };
+      }
+    }
+
+    // Also try to match a word under cursor as a class name
+    const wordRange = document.getWordRangeAtPosition(position, /[\w-]+/);
+    if (wordRange) {
+      const word = document.getText(wordRange);
+      // Check if any resolved selector contains this word as a class
+      for (const sel of selectors) {
+        if (sel.resolved.includes(`.${word}`) && sel.line === position.line) {
+          return sel.resolved;
+        }
+      }
+    }
+
+    if (best && best.distance <= 2) {
+      return best.resolved;
+    }
+
+    // Fallback: use word under cursor as simple class
+    if (wordRange) {
+      const word = document.getText(wordRange);
+      if (word) { return `.${word}`; }
+    }
+
+    return null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Reverse DefinitionProvider: Go from SCSS/CSS → usage in JS/TS/HTML
+  // ---------------------------------------------------------------------------
+
+  const reverseDefinitionProvider = vscode.languages.registerDefinitionProvider(
+    [
+      { language: 'scss' },
+      { language: 'sass' },
+      { language: 'css' },
+    ],
+    {
+      async provideDefinition(
+        document: vscode.TextDocument,
+        position: vscode.Position,
+      ): Promise<vscode.Location[] | null> {
+        const selector = resolveTargetSelector(document, position);
+        if (!selector) { return null; }
+
+        const chain = parseSelectorToIR(selector);
+        const targetClasses = getTargetClasses(chain);
+        if (targetClasses.length === 0) { return null; }
+
+        const extractions = await getAllExtractions();
+        const matches = matchSelectorChainMulti(chain, extractions);
+
+        if (matches.length === 0) { return null; }
+
+        return matches.map((m) => {
+          const uri = vscode.Uri.file(m.filePath);
+          return new vscode.Location(uri, new vscode.Position(m.line, m.column));
+        });
+      },
+    },
+  );
+
+  context.subscriptions.push(reverseDefinitionProvider);
+
+  // ---------------------------------------------------------------------------
+  // Reverse ReferenceProvider: Find all usages of a class from SCSS/CSS
+  // ---------------------------------------------------------------------------
+
+  const reverseReferenceProvider = vscode.languages.registerReferenceProvider(
+    [
+      { language: 'scss' },
+      { language: 'sass' },
+      { language: 'css' },
+    ],
+    {
+      async provideReferences(
+        document: vscode.TextDocument,
+        position: vscode.Position,
+      ): Promise<vscode.Location[] | null> {
+        const selector = resolveTargetSelector(document, position);
+        if (!selector) { return null; }
+
+        const chain = parseSelectorToIR(selector);
+        const targetClasses = getTargetClasses(chain);
+        if (targetClasses.length === 0) { return null; }
+
+        const extractions = await getAllExtractions();
+        const matches = matchSelectorChainMulti(chain, extractions);
+
+        if (matches.length === 0) { return null; }
+
+        return matches.map((m) => {
+          const uri = vscode.Uri.file(m.filePath);
+          return new vscode.Location(uri, new vscode.Position(m.line, m.column));
+        });
+      },
+    },
+  );
+
+  context.subscriptions.push(reverseReferenceProvider);
+
+  // ---------------------------------------------------------------------------
+  // Command: Find Class Usages (reverse search with QuickPick)
+  // ---------------------------------------------------------------------------
+
+  const findUsagesCmd = vscode.commands.registerCommand(
+    'scssClassFinder.findClassUsages',
+    async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) { return; }
+
+      const selector = resolveTargetSelector(editor.document, editor.selection.active);
+      if (!selector) {
+        vscode.window.showInformationMessage('No CSS selector found at cursor position');
+        return;
+      }
+
+      const chain = parseSelectorToIR(selector);
+      const targetClasses = getTargetClasses(chain);
+      if (targetClasses.length === 0) {
+        vscode.window.showInformationMessage('No class names found in selector');
+        return;
+      }
+
+      const extractions = await getAllExtractions();
+      const matches = matchSelectorChainMulti(chain, extractions);
+
+      if (matches.length === 0) {
+        vscode.window.showInformationMessage(`No usages found for "${selector}"`);
+        return;
+      }
+
+      const iconFor = (c: MatchConfidence) => {
+        switch (c) {
+          case 'exact': return '$(check)';
+          case 'structural': return '$(symbol-structure)';
+          case 'partial': return '$(symbol-event)';
+          case 'probable': return '$(question)';
+        }
+      };
+
+      interface UsageQuickPickItem extends vscode.QuickPickItem {
+        match: MatchResult;
+      }
+
+      const items: UsageQuickPickItem[] = matches.map((m) => ({
+        label: `${iconFor(m.confidence)} ${m.confidence}`,
+        description: `${vscode.workspace.asRelativePath(m.filePath)}:${m.line + 1}`,
+        detail: m.reason,
+        match: m,
+      }));
+
+      const picked = await vscode.window.showQuickPick(items, {
+        placeHolder: `${matches.length} usage(s) of "${selector}"`,
+        matchOnDescription: true,
+        matchOnDetail: true,
+      });
+
+      if (!picked) { return; }
+
+      const uri = vscode.Uri.file(picked.match.filePath);
+      const doc = await vscode.workspace.openTextDocument(uri);
+      const pos = new vscode.Position(picked.match.line, picked.match.column);
+      const ed = await vscode.window.showTextDocument(doc);
+      ed.selection = new vscode.Selection(pos, pos);
+      ed.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+    },
+  );
+
+  context.subscriptions.push(findUsagesCmd);
 }
 
 export function deactivate() {}

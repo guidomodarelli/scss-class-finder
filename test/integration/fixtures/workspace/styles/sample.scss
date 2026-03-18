@@ -17,3 +17,24 @@
     padding-left: 8px;
   }
 }
+
+// --- Combinator fixtures for reverse navigation ---
+.wrapper {
+  > .panel {
+    border: 1px solid #ccc;
+  }
+}
+
+.nav {
+  .nav-item {
+    + .nav-item {
+      margin-left: 8px;
+    }
+  }
+}
+
+.sidebar {
+  ~ .content {
+    margin-left: 200px;
+  }
+}

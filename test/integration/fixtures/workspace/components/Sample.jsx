@@ -7,3 +7,30 @@ export function Sample() {
     </div>
   );
 }
+
+export function Layout() {
+  return (
+    <div className="wrapper">
+      <div className="panel">Panel content</div>
+    </div>
+  );
+}
+
+export function Nav() {
+  return (
+    <nav className="nav">
+      <a className="nav-item">Home</a>
+      <a className="nav-item">About</a>
+      <a className="nav-item">Contact</a>
+    </nav>
+  );
+}
+
+export function SidebarLayout() {
+  return (
+    <div>
+      <aside className="sidebar">Sidebar</aside>
+      <main className="content">Main content</main>
+    </div>
+  );
+}

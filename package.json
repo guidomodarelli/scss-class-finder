@@ -14,7 +14,10 @@
     "onLanguage:javascriptreact",
     "onLanguage:typescript",
     "onLanguage:typescriptreact",
-    "onLanguage:html"
+    "onLanguage:html",
+    "onLanguage:scss",
+    "onLanguage:sass",
+    "onLanguage:css"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -22,6 +25,10 @@
       {
         "command": "scssClassFinder.findClass",
         "title": "SCSS: Find Class by Resolved Selector"
+      },
+      {
+        "command": "scssClassFinder.findClassUsages",
+        "title": "SCSS: Find Class Usages in Code"
       }
     ],
     "configuration": {
@@ -39,6 +46,12 @@
         "command": "scssClassFinder.findClass",
         "key": "ctrl+alt+f",
         "mac": "cmd+alt+f"
+      },
+      {
+        "command": "scssClassFinder.findClassUsages",
+        "key": "ctrl+alt+u",
+        "mac": "cmd+alt+u",
+        "when": "editorLangId == scss || editorLangId == sass || editorLangId == css"
       }
     ]
   },
