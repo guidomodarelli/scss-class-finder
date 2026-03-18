@@ -25,10 +25,58 @@ interface FindClassCommandOptions {
 }
 
 // ---------------------------------------------------------------------------
+// Shared search logic
+// ---------------------------------------------------------------------------
+
+async function findMatchingSelectors(target: string): Promise<SearchResult[]> {
+  const files = await vscode.workspace.findFiles(
+    '**/*.{scss,sass}',
+    '**/{node_modules,dist,build,coverage}/**',
+  );
+
+  const results: SearchResult[] = [];
+
+  for (const file of files) {
+    const bytes = await vscode.workspace.fs.readFile(file);
+    const text = Buffer.from(bytes).toString('utf8');
+    const selectors = resolveSelectors(text);
+
+    for (const sel of selectors) {
+      let matchType: SearchResult['matchType'] | null = null;
+
+      if (sel.resolved === target) {
+        matchType = 'exact';
+      } else if (sel.resolved.endsWith(` ${target}`)) {
+        matchType = 'endsWith';
+      }
+
+      if (matchType) {
+        results.push({
+          uri: file,
+          line: sel.line,
+          resolved: sel.resolved,
+          raw: sel.raw,
+          matchType,
+        });
+      }
+    }
+  }
+
+  const order: Record<SearchResult['matchType'], number> = {
+    exact: 0,
+    endsWith: 1,
+  };
+  results.sort((a, b) => order[a.matchType] - order[b.matchType]);
+
+  return results;
+}
+
+// ---------------------------------------------------------------------------
 // Extension entry point
 // ---------------------------------------------------------------------------
 
 export function activate(context: vscode.ExtensionContext) {
+  // --- Command: Find Class by Resolved Selector ---
   const disposable = vscode.commands.registerCommand(
     'scssClassFinder.findClass',
     async (options?: FindClassCommandOptions) => {
@@ -108,39 +156,7 @@ export function activate(context: vscode.ExtensionContext) {
       const target = input.startsWith('.') ? input : `.${input}`;
       cachedTarget = target;
 
-      // Find all SCSS/SASS files in the workspace
-      const files = await vscode.workspace.findFiles(
-        '**/*.{scss,sass}',
-        '**/{node_modules,dist,build,coverage}/**',
-      );
-
-      const results: SearchResult[] = [];
-
-      for (const file of files) {
-        const bytes = await vscode.workspace.fs.readFile(file);
-        const text = Buffer.from(bytes).toString('utf8');
-        const selectors = resolveSelectors(text);
-
-        for (const sel of selectors) {
-          let matchType: SearchResult['matchType'] | null = null;
-
-          if (sel.resolved === target) {
-            matchType = 'exact';
-          } else if (sel.resolved.endsWith(` ${target}`)) {
-            matchType = 'endsWith';
-          }
-
-          if (matchType) {
-            results.push({
-              uri: file,
-              line: sel.line,
-              resolved: sel.resolved,
-              raw: sel.raw,
-              matchType,
-            });
-          }
-        }
-      }
+      const results = await findMatchingSelectors(target);
 
       if (results.length === 0) {
         if (!options?.suppressNoResultsMessage) {
@@ -148,13 +164,6 @@ export function activate(context: vscode.ExtensionContext) {
         }
         return;
       }
-
-      // Sort: exact → endsWith
-      const order: Record<SearchResult['matchType'], number> = {
-        exact: 0,
-        endsWith: 1,
-      };
-      results.sort((a, b) => order[a.matchType] - order[b.matchType]);
 
       const iconFor = (t: SearchResult['matchType']) =>
         t === 'exact' ? '$(check)' : '$(arrow-right)';
@@ -238,6 +247,38 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(disposable);
+
+  // --- DefinitionProvider: Go to SCSS definition from JS/TS/HTML ---
+  const definitionProvider = vscode.languages.registerDefinitionProvider(
+    [
+      { language: 'javascript' },
+      { language: 'javascriptreact' },
+      { language: 'typescript' },
+      { language: 'typescriptreact' },
+      { language: 'html' },
+    ],
+    {
+      async provideDefinition(
+        document: vscode.TextDocument,
+        position: vscode.Position,
+      ): Promise<vscode.Location[] | null> {
+        const range = document.getWordRangeAtPosition(position, /[\w-]+/);
+        if (!range) { return null; }
+
+        const word = document.getText(range);
+        if (!word) { return null; }
+
+        const target = `.${word}`;
+        const results = await findMatchingSelectors(target);
+
+        if (results.length === 0) { return null; }
+
+        return results.map((r) => new vscode.Location(r.uri, new vscode.Position(r.line, 0)));
+      },
+    },
+  );
+
+  context.subscriptions.push(definitionProvider);
 }
 
 export function deactivate() {}

@@ -25,6 +25,7 @@ because the resolved selector is `.Bodycard-header`.
 - 🔗 **Resolves nested selectors** — `&`-based concatenation (`&-header`, `&.active`, `&:hover`), multi-level nesting, and descendant selectors.
 - 📋 **Comma-separated selector lists** — `.a, .b { &-x }` correctly expands to `.a-x` and `.b-x`.
 - 🎯 **Smart matching** — results are filtered to **exact** and **endsWith** matches only, avoiding noisy partial hits.
+- 🧭 **Go to Definition** — use `F12` / `Cmd+Click` on a CSS class name in JS, TS, JSX, TSX, or HTML files to jump directly to its SCSS definition. Works with nested selectors and `&`.
 - 👁️ **Live preview** — navigating the results list previews each match in the editor.
 - ✏️ **Cursor-aware** — pre-fills the search input with the word under the cursor for quick confirmation or editing.
 - 🪶 **Zero dependencies** — custom single-pass lexer/parser, no external SCSS libraries. The packaged extension weighs ~9 KB.
@@ -33,10 +34,16 @@ because the resolved selector is `.Bodycard-header`.
 
 ## 🚀 Usage
 
+### Command Palette
+
 1. Press `Cmd+Alt+F` (macOS) / `Ctrl+Alt+F` (Windows/Linux), or run the command **SCSS: Find Class by Resolved Selector** from the Command Palette.
 2. Type the class name (e.g. `bodyCard-header`). The leading `.` is added automatically if omitted.
 3. Browse the results — exact matches appear first, followed by endsWith matches.
 4. Select a result to jump to its definition.
+
+### Go to Definition
+
+In any JS, TS, JSX, TSX, or HTML file, place your cursor on a CSS class name and press `F12` (or `Cmd+Click`) to jump to its SCSS definition. If there are multiple matches, VS Code shows a peek view to choose from.
 
 ## 🏷️ Match Types
 
