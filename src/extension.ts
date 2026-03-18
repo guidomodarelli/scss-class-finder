@@ -10,7 +10,7 @@ interface SearchResult {
   line: number;
   resolved: string;
   raw: string;
-  matchType: 'exact' | 'endsWith' | 'contains';
+  matchType: 'exact' | 'endsWith';
 }
 
 interface QuickPickItemWithResult extends vscode.QuickPickItem {
@@ -126,10 +126,8 @@ export function activate(context: vscode.ExtensionContext) {
 
           if (sel.resolved === target) {
             matchType = 'exact';
-          } else if (sel.resolved.endsWith(target)) {
+          } else if (sel.resolved.endsWith(` ${target}`)) {
             matchType = 'endsWith';
-          } else if (sel.resolved.includes(target)) {
-            matchType = 'contains';
           }
 
           if (matchType) {
@@ -151,16 +149,15 @@ export function activate(context: vscode.ExtensionContext) {
         return;
       }
 
-      // Sort: exact → endsWith → contains
+      // Sort: exact → endsWith
       const order: Record<SearchResult['matchType'], number> = {
         exact: 0,
         endsWith: 1,
-        contains: 2,
       };
       results.sort((a, b) => order[a.matchType] - order[b.matchType]);
 
       const iconFor = (t: SearchResult['matchType']) =>
-        t === 'exact' ? '$(check)' : t === 'endsWith' ? '$(arrow-right)' : '$(search)';
+        t === 'exact' ? '$(check)' : '$(arrow-right)';
 
       const items: QuickPickItemWithResult[] = results.map((r) => ({
         label: `${iconFor(r.matchType)} ${r.resolved}`,

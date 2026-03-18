@@ -37,6 +37,39 @@ async function run() {
     openedText.includes('.card') && openedText.includes('&-header'),
     'Expected the fixture SCSS file to be opened',
   );
+
+  // --- endsWith match: searching ".title" should find ".card .title" ---
+  await vscode.commands.executeCommand('scssClassFinder.findClass', {
+    query: 'title',
+    autoPickFirst: true,
+    previewOnResultFocus: false,
+    suppressNoResultsMessage: true,
+  });
+
+  const endsWithEditor = vscode.window.activeTextEditor;
+  assert.ok(endsWithEditor, 'Expected an active editor for endsWith match');
+  assert.ok(
+    endsWithEditor.document.fileName.endsWith(path.join('styles', 'sample.scss')),
+    `endsWith: Expected sample.scss, got ${endsWithEditor.document.fileName}`,
+  );
+
+  // --- contains should NOT match: searching "header" must not find ".card-header" ---
+  // Close all editors first so we can detect "no result" by checking that no new editor opens.
+  await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+
+  await vscode.commands.executeCommand('scssClassFinder.findClass', {
+    query: 'header',
+    autoPickFirst: true,
+    previewOnResultFocus: false,
+    suppressNoResultsMessage: true,
+  });
+
+  const containsEditor = vscode.window.activeTextEditor;
+  assert.equal(
+    containsEditor,
+    undefined,
+    'contains match should not return results — ".header" is neither exact nor endsWith for ".card-header"',
+  );
 }
 
 module.exports = { run };
