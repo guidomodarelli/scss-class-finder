@@ -19,6 +19,10 @@
     "onLanguage:sass",
     "onLanguage:css"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/guidomodarelli/scss-class-finder"
+  },
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
