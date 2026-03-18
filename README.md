@@ -26,7 +26,8 @@ because the resolved selector is `.Bodycard-header`.
 - 📋 **Comma-separated selector lists** — `.a, .b { &-x }` correctly expands to `.a-x` and `.b-x`.
 - 🎯 **Smart matching** — results are filtered to **exact** and **endsWith** matches only, avoiding noisy partial hits.
 - 👁️ **Live preview** — navigating the results list previews each match in the editor.
-- ✏️ **Cursor-aware** — pre-fills the search input with the word under the cursor.
+- ✏️ **Cursor-aware** — pre-fills the search input with the word under the cursor for quick confirmation or editing.
+- 🪶 **Zero dependencies** — custom single-pass lexer/parser, no external SCSS libraries. The packaged extension weighs ~9 KB.
 - 🚫 **Skips noise** — ignores `node_modules`, `dist`, `build`, and `coverage` directories.
 - 🧩 **Handles edge cases** — comments, strings, `@media`/`@supports` at-rules, and `#{}` interpolation.
 
