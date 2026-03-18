@@ -10,7 +10,7 @@ The goal is not "search a string in files". The goal is:
 
 And **inversely**:
 
-> Standing on a class or selector in a style file, jump to the exact place in markup or code where that class is used — respecting structural context (descendant, child, sibling combinators).
+> Standing on a class or selector in a style file, jump to its usage in markup or code — respecting structural context (descendant, child, sibling combinators).
 
 For example, searching `Bodycard-header` finds this:
 
@@ -32,11 +32,11 @@ And from that SCSS rule, `F12` / `Cmd+Click` navigates to:
 - 📋 **Comma-separated selector lists** — `.a, .b { &-x }` correctly expands to `.a-x` and `.b-x`.
 - 🎯 **Smart matching** — results are filtered to **exact** and **endsWith** matches only, avoiding noisy partial hits.
 - 🧭 **Go to Definition (forward)** — use `F12` / `Cmd+Click` on a CSS class name in JS, TS, JSX, TSX, or HTML files to jump directly to its SCSS definition.
-- 🔄 **Go to Definition (reverse)** — use `F12` / `Cmd+Click` on a selector in SCSS, SASS, or CSS files to jump to the exact place in code where that class is used.
+- 🔄 **Go to Definition (reverse)** — use `F12` / `Cmd+Click` on a selector in SCSS, SASS, or CSS files to jump to where that class is used in code.
 - 🔎 **Find All References** — use `Shift+F12` on a selector in SCSS/CSS to see all usages across JS/TS/JSX/TSX/HTML files.
 - 🏗️ **Structural matching** — reverse navigation respects CSS combinators: descendant (` `), child (`>`), adjacent sibling (`+`), and general sibling (`~`).
 - 📊 **Confidence scoring** — results are ranked by structural match quality: exact > structural > partial > probable.
-- 🎨 **Multiple class patterns** — detects `class`, `className`, template literals, string concatenation, and `clsx`/`classnames`/`cx` helpers.
+- 🎨 **Multiple class patterns** — detects `class`, `className`, template literals, and `clsx`/`classnames`/`cx` helpers.
 - 👁️ **Live preview** — navigating the results list previews each match in the editor.
 - ✏️ **Cursor-aware** — pre-fills the search input with the word under the cursor.
 - 🪶 **Zero dependencies** — custom single-pass lexer/parser, no external libraries. The packaged extension weighs ~15 KB.
@@ -59,7 +59,7 @@ In any JS, TS, JSX, TSX, or HTML file, place your cursor on a CSS class name and
 
 ### Go to Definition (reverse: styles → code)
 
-In any SCSS, SASS, or CSS file, place your cursor on a selector and press `F12` (or `Cmd+Click`) to jump to the exact usage in JS/TS/JSX/TSX/HTML.
+In any SCSS, SASS, or CSS file, place your cursor on a selector and press `F12` (or `Cmd+Click`) to jump to its usage in JS/TS/JSX/TSX/HTML.
 
 ### Find Class Usages
 
