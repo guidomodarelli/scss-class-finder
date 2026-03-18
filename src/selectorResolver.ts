@@ -70,7 +70,7 @@ export function resolveSelectors(text: string): SelectorInfo[] {
   // Level 0 = root (virtual empty parent).
   const parentStack: string[][] = [['']];
 
-  function resetSelector(from: number) {
+  function resetSelectorState(from: number) {
     selectorStart = from;
     seenNonWS = false;
   }
@@ -95,7 +95,7 @@ export function resolveSelectors(text: string): SelectorInfo[] {
       if (ch === '*' && next === '/') {
         inBlockComment = false;
         if (blockCommentAtSelectorStart) {
-          resetSelector(pos + 2);
+          resetSelectorState(pos + 2);
           blockCommentAtSelectorStart = false;
         }
         pos += 2;
@@ -111,7 +111,7 @@ export function resolveSelectors(text: string): SelectorInfo[] {
         inLineComment = false;
         line++;
         pos++;
-        resetSelector(pos);
+        resetSelectorState(pos);
       } else {
         pos++;
       }
@@ -175,33 +175,33 @@ export function resolveSelectors(text: string): SelectorInfo[] {
         parentStack.push(parentStack[parentStack.length - 1]);
       } else if (rawSelector.length > 0) {
         const parents = parentStack[parentStack.length - 1];
-        const parts = splitSelectors(rawSelector);
-        const resolved: string[] = [];
+        const selectorParts = splitSelectors(rawSelector);
+        const resolvedSelectors: string[] = [];
 
-        for (const sel of parts) {
-          if (sel.includes('&')) {
+        for (const selectorPart of selectorParts) {
+          if (selectorPart.includes('&')) {
             for (const parent of parents) {
-              resolved.push(sel.replace(/&/g, parent));
+              resolvedSelectors.push(selectorPart.replace(/&/g, parent));
             }
           } else {
             for (const parent of parents) {
-              resolved.push(parent === '' ? sel : `${parent} ${sel}`);
+              resolvedSelectors.push(parent === '' ? selectorPart : `${parent} ${selectorPart}`);
             }
           }
         }
 
-        for (const r of resolved) {
-          results.push({ line: selectorLine, resolved: r, raw: rawSelector });
+        for (const resolvedSelector of resolvedSelectors) {
+          results.push({ line: selectorLine, resolved: resolvedSelector, raw: rawSelector });
         }
 
-        parentStack.push(resolved);
+        parentStack.push(resolvedSelectors);
       } else {
         // empty selector (e.g. bare block in a mixin body) — keep parent
         parentStack.push(parentStack[parentStack.length - 1]);
       }
 
       pos++;
-      resetSelector(pos);
+      resetSelectorState(pos);
       continue;
     }
 
@@ -209,14 +209,14 @@ export function resolveSelectors(text: string): SelectorInfo[] {
     if (ch === '}') {
       if (parentStack.length > 1) { parentStack.pop(); }
       pos++;
-      resetSelector(pos);
+      resetSelectorState(pos);
       continue;
     }
 
     // ---- semicolon  ;  (end of declaration / @-statement) ----
     if (ch === ';') {
       pos++;
-      resetSelector(pos);
+      resetSelectorState(pos);
       continue;
     }
 

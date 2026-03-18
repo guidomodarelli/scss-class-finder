@@ -64,9 +64,6 @@ export function extractClassUsages(
 // HTML extraction
 // ---------------------------------------------------------------------------
 
-// Matches opening tags capturing: (1) tag name, (2) attributes blob
-const OPEN_TAG_RE = /<([a-zA-Z][\w-]*)((?:\s[^>]*?)?)(\s*\/?)>/g;
-const CLOSE_TAG_RE = /<\/([a-zA-Z][\w-]*)\s*>/g;
 // class="..." or class='...'
 const CLASS_ATTR_RE = /\bclass\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
 
@@ -76,13 +73,13 @@ function extractFromHTML(text: string, filePath: string): ExtractionResult {
   const stack: ViewNode[] = [];
 
   // We'll walk through the text sequentially, handling open and close tags.
-  const combined = /(<\/([a-zA-Z][\w-]*)\s*>)|(<([a-zA-Z][\w-]*)((?:\s[^>]*?)?)(\s*\/?)>)/g;
-  let m: RegExpExecArray | null;
+  const tagPattern = /(<\/([a-zA-Z][\w-]*)\s*>)|(<([a-zA-Z][\w-]*)((?:\s[^>]*?)?)(\s*\/?)>)/g;
+  let tagMatch: RegExpExecArray | null;
 
-  while ((m = combined.exec(text)) !== null) {
-    if (m[1]) {
+  while ((tagMatch = tagPattern.exec(text)) !== null) {
+    if (tagMatch[1]) {
       // Close tag
-      const closeTag = m[2].toLowerCase();
+      const closeTag = tagMatch[2].toLowerCase();
       // Pop stack until we find a matching open tag
       for (let i = stack.length - 1; i >= 0; i--) {
         if (stack[i].tag === closeTag) {
@@ -90,16 +87,16 @@ function extractFromHTML(text: string, filePath: string): ExtractionResult {
           break;
         }
       }
-    } else if (m[3]) {
+    } else if (tagMatch[3]) {
       // Open tag
-      const tagName = m[4].toLowerCase();
-      const attrsBlob = m[5] || '';
-      const selfClosing = (m[6] || '').includes('/');
-      const tagOffset = m.index + 1; // offset of tag name (skip '<')
-      const { line, column } = offsetToLC(text, m.index);
+      const tagName = tagMatch[4].toLowerCase();
+      const attrsBlob = tagMatch[5] || '';
+      const selfClosing = (tagMatch[6] || '').includes('/');
+      const tagOffset = tagMatch.index + 1; // offset of tag name (skip '<')
+      const { line, column } = offsetToLC(text, tagMatch.index);
 
       const classes = extractClassesFromAttrs(attrsBlob);
-      const classOffsets = buildClassOffsetMap(text, m.index, classes);
+      const classOffsets = buildClassOffsetMap(text, tagMatch.index, classes);
 
       const parent = stack.length > 0 ? stack[stack.length - 1] : null;
       const siblingIndex = parent ? parent.children.length : roots.length;
@@ -139,10 +136,6 @@ function extractFromHTML(text: string, filePath: string): ExtractionResult {
 // JSX / TSX extraction
 // ---------------------------------------------------------------------------
 
-// Matches JSX opening tags: <Component ...> or <div ...>
-const JSX_OPEN_TAG_RE = /(<([A-Za-z_][\w.]*)(\s[^>]*?)?(\s*\/?)>)/g;
-const JSX_CLOSE_TAG_RE = /<\/([A-Za-z_][\w.]*)\s*>/g;
-
 // className="..." | className={'...'} | className={`...`}
 const CLASSNAME_LITERAL_RE = /\bclassName\s*=\s*(?:"([^"]*)"|'([^']*)'|\{['"]([^'"]*)['"]\}|\{\s*`([^`]*)`\s*\})/g;
 
@@ -154,29 +147,29 @@ function extractFromJSX(text: string, filePath: string): ExtractionResult {
   const roots: ViewNode[] = [];
   const stack: ViewNode[] = [];
 
-  const combined = /(<\/([A-Za-z_][\w.]*)\s*>)|(<([A-Za-z_][\w.]*)(\s[^>]*?)?(\s*\/?)>)/g;
-  let m: RegExpExecArray | null;
+  const tagPattern = /(<\/([A-Za-z_][\w.]*)\s*>)|(<([A-Za-z_][\w.]*)(\s[^>]*?)?(\s*\/?)>)/g;
+  let tagMatch: RegExpExecArray | null;
 
-  while ((m = combined.exec(text)) !== null) {
-    if (m[1]) {
+  while ((tagMatch = tagPattern.exec(text)) !== null) {
+    if (tagMatch[1]) {
       // Close tag
-      const closeTag = m[2];
+      const closeTag = tagMatch[2];
       for (let i = stack.length - 1; i >= 0; i--) {
         if (stack[i].tag === closeTag) {
           stack.splice(i);
           break;
         }
       }
-    } else if (m[3]) {
+    } else if (tagMatch[3]) {
       // Open tag
-      const tagName = m[4];
-      const attrsBlob = m[5] || '';
-      const selfClosing = (m[6] || '').includes('/');
-      const tagOffset = m.index + 1;
-      const { line, column } = offsetToLC(text, m.index);
+      const tagName = tagMatch[4];
+      const attrsBlob = tagMatch[5] || '';
+      const selfClosing = (tagMatch[6] || '').includes('/');
+      const tagOffset = tagMatch.index + 1;
+      const { line, column } = offsetToLC(text, tagMatch.index);
 
       const classes = extractClassesFromJSXAttrs(attrsBlob);
-      const classOffsets = buildClassOffsetMap(text, m.index, classes);
+      const classOffsets = buildClassOffsetMap(text, tagMatch.index, classes);
 
       const parent = stack.length > 0 ? stack[stack.length - 1] : null;
       const siblingIndex = parent ? parent.children.length : roots.length;
@@ -218,12 +211,12 @@ function extractFromJSX(text: string, filePath: string): ExtractionResult {
 
 function extractClassesFromAttrs(blob: string): string[] {
   const classes: string[] = [];
-  let m: RegExpExecArray | null;
-  const re = new RegExp(CLASS_ATTR_RE.source, 'g');
-  while ((m = re.exec(blob)) !== null) {
-    const value = m[1] ?? m[2] ?? '';
-    for (const cls of value.split(/\s+/)) {
-      if (cls) { classes.push(cls); }
+  let attributeMatch: RegExpExecArray | null;
+  const classAttributePattern = new RegExp(CLASS_ATTR_RE.source, 'g');
+  while ((attributeMatch = classAttributePattern.exec(blob)) !== null) {
+    const value = attributeMatch[1] ?? attributeMatch[2] ?? '';
+    for (const className of value.split(/\s+/)) {
+      if (className) { classes.push(className); }
     }
   }
   return classes;
@@ -233,34 +226,34 @@ function extractClassesFromJSXAttrs(blob: string): string[] {
   const classes: string[] = [];
 
   // className="..." | className={'...'} | className={`...`}
-  let m: RegExpExecArray | null;
-  const re = new RegExp(CLASSNAME_LITERAL_RE.source, 'g');
-  while ((m = re.exec(blob)) !== null) {
-    const value = m[1] ?? m[2] ?? m[3] ?? m[4] ?? '';
-    for (const cls of splitClassValue(value)) {
-      if (cls) { classes.push(cls); }
+  let attributeMatch: RegExpExecArray | null;
+  const classNameLiteralPattern = new RegExp(CLASSNAME_LITERAL_RE.source, 'g');
+  while ((attributeMatch = classNameLiteralPattern.exec(blob)) !== null) {
+    const value = attributeMatch[1] ?? attributeMatch[2] ?? attributeMatch[3] ?? attributeMatch[4] ?? '';
+    for (const className of splitClassValue(value)) {
+      if (className) { classes.push(className); }
     }
   }
 
   // clsx / classnames / cx
-  const clsxRe = new RegExp(CLSX_RE.source, 'g');
-  while ((m = clsxRe.exec(blob)) !== null) {
-    const args = m[1];
+  const helperCallPattern = new RegExp(CLSX_RE.source, 'g');
+  while ((attributeMatch = helperCallPattern.exec(blob)) !== null) {
+    const helperArguments = attributeMatch[1];
     // Extract string literal arguments: 'foo', "bar"
-    const strRe = /['"]([^'"]+)['"]/g;
-    let sm: RegExpExecArray | null;
-    while ((sm = strRe.exec(args)) !== null) {
-      for (const cls of sm[1].split(/\s+/)) {
-        if (cls) { classes.push(cls); }
+    const stringLiteralPattern = /['"]([^'"]+)['"]/g;
+    let helperMatch: RegExpExecArray | null;
+    while ((helperMatch = stringLiteralPattern.exec(helperArguments)) !== null) {
+      for (const className of helperMatch[1].split(/\s+/)) {
+        if (className) { classes.push(className); }
       }
     }
     // Extract template literal static parts: `foo bar`
-    const tmplRe = /`([^`]*)`/g;
-    while ((sm = tmplRe.exec(args)) !== null) {
+    const templateLiteralPattern = /`([^`]*)`/g;
+    while ((helperMatch = templateLiteralPattern.exec(helperArguments)) !== null) {
       // Remove ${...} expressions and split remaining parts
-      const staticParts = sm[1].replace(/\$\{[^}]*\}/g, ' ');
-      for (const cls of staticParts.split(/\s+/)) {
-        if (cls) { classes.push(cls); }
+      const staticParts = helperMatch[1].replace(/\$\{[^}]*\}/g, ' ');
+      for (const className of staticParts.split(/\s+/)) {
+        if (className) { classes.push(className); }
       }
     }
   }
@@ -303,19 +296,19 @@ function buildClassOffsetMap(
   tagStart: number,
   classes: string[],
 ): Map<string, number> {
-  const map = new Map<string, number>();
+  const classOffsetByName = new Map<string, number>();
   // Search region: from tagStart to the next '>'
   const endIdx = text.indexOf('>', tagStart);
   const region = text.substring(tagStart, endIdx >= 0 ? endIdx + 1 : tagStart + 500);
 
-  for (const cls of classes) {
-    if (map.has(cls)) { continue; }
-    const idx = region.indexOf(cls);
+  for (const className of classes) {
+    if (classOffsetByName.has(className)) { continue; }
+    const idx = region.indexOf(className);
     if (idx >= 0) {
-      map.set(cls, tagStart + idx);
+      classOffsetByName.set(className, tagStart + idx);
     }
   }
-  return map;
+  return classOffsetByName;
 }
 
 // ---------------------------------------------------------------------------

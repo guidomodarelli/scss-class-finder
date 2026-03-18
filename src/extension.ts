@@ -106,21 +106,66 @@ interface GitignoreFilter {
   patterns: RegExp[];
 }
 
+function createContextualError(message: string, cause: unknown): Error {
+  const contextualError = new Error(message);
+  Object.assign(contextualError, { cause });
+  return contextualError;
+}
+
+function isMissingFileError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return error.message.includes('FileNotFound') || error.message.includes('EntryNotFound');
+}
+
+async function readWorkspaceTextFile(uri: vscode.Uri, operationName: string): Promise<string> {
+  try {
+    const fileBytes = await vscode.workspace.fs.readFile(uri);
+    return Buffer.from(fileBytes).toString('utf8');
+  } catch (error) {
+    throw createContextualError(
+      `readWorkspaceTextFile failed during ${operationName} for uri="${uri.toString()}"`,
+      error,
+    );
+  }
+}
+
+async function tryLoadGitignoreFilter(folder: vscode.WorkspaceFolder): Promise<GitignoreFilter | null> {
+  const gitignoreUri = vscode.Uri.joinPath(folder.uri, '.gitignore');
+
+  try {
+    const gitignoreContent = await readWorkspaceTextFile(
+      gitignoreUri,
+      `loadGitignoreFilters:readGitignore workspaceFolder="${folder.uri.fsPath}"`,
+    );
+    const patterns = parseGitignorePatterns(gitignoreContent);
+    if (patterns.length === 0) {
+      return null;
+    }
+
+    return { root: folder.uri.fsPath, patterns };
+  } catch (error) {
+    if (isMissingFileError(error)) {
+      return null;
+    }
+
+    throw createContextualError(
+      `loadGitignoreFilters failed for workspaceFolder="${folder.uri.fsPath}" while reading ".gitignore"`,
+      error,
+    );
+  }
+}
+
 async function loadGitignoreFilters(): Promise<GitignoreFilter[]> {
-  const folders = vscode.workspace.workspaceFolders ?? [];
+  const workspaceFolders = vscode.workspace.workspaceFolders ?? [];
   const filters: GitignoreFilter[] = [];
 
-  for (const folder of folders) {
-    const gitignoreUri = vscode.Uri.joinPath(folder.uri, '.gitignore');
-    try {
-      const bytes = await vscode.workspace.fs.readFile(gitignoreUri);
-      const content = Buffer.from(bytes).toString('utf8');
-      const patterns = parseGitignorePatterns(content);
-      if (patterns.length > 0) {
-        filters.push({ root: folder.uri.fsPath, patterns });
-      }
-    } catch {
-      // No .gitignore — skip
+  for (const folder of workspaceFolders) {
+    const filter = await tryLoadGitignoreFilter(folder);
+    if (filter) {
+      filters.push(filter);
     }
   }
 
@@ -129,12 +174,12 @@ async function loadGitignoreFilters(): Promise<GitignoreFilter[]> {
 
 function isIgnoredByGitignore(uri: vscode.Uri, filters: GitignoreFilter[]): boolean {
   for (const filter of filters) {
-    const rel = path.relative(filter.root, uri.fsPath);
-    if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) { continue; }
+    const relativePath = path.relative(filter.root, uri.fsPath);
+    if (!relativePath || relativePath.startsWith('..') || path.isAbsolute(relativePath)) { continue; }
 
-    const posixRel = rel.split(path.sep).join('/');
-    for (const re of filter.patterns) {
-      if (re.test(posixRel)) { return true; }
+    const posixRelativePath = relativePath.split(path.sep).join('/');
+    for (const pattern of filter.patterns) {
+      if (pattern.test(posixRelativePath)) { return true; }
     }
   }
   return false;
@@ -149,7 +194,7 @@ async function findWorkspaceFiles(includeGlob: string): Promise<vscode.Uri[]> {
   const filters = await loadGitignoreFilters();
   if (filters.length === 0) { return files; }
 
-  return files.filter((f) => !isIgnoredByGitignore(f, filters));
+  return files.filter((fileUri) => !isIgnoredByGitignore(fileUri, filters));
 }
 
 // ---------------------------------------------------------------------------
@@ -185,25 +230,27 @@ async function findMatchingSelectors(target: string): Promise<SearchResult[]> {
   const results: SearchResult[] = [];
 
   for (const file of files) {
-    const bytes = await vscode.workspace.fs.readFile(file);
-    const text = Buffer.from(bytes).toString('utf8');
+    const text = await readWorkspaceTextFile(
+      file,
+      `findMatchingSelectors:readStyleFile target="${target}"`,
+    );
     const selectors = resolveSelectors(text);
 
-    for (const sel of selectors) {
+    for (const selectorInfo of selectors) {
       let matchType: SearchResult['matchType'] | null = null;
 
-      if (sel.resolved === target) {
+      if (selectorInfo.resolved === target) {
         matchType = 'exact';
       } else if (
-        sel.resolved.startsWith(`${target}:`) ||
-        sel.resolved.startsWith(`${target}[`)
+        selectorInfo.resolved.startsWith(`${target}:`) ||
+        selectorInfo.resolved.startsWith(`${target}[`)
       ) {
         matchType = 'pseudoSuffix';
-      } else if (sel.resolved.endsWith(` ${target}`)) {
+      } else if (selectorInfo.resolved.endsWith(` ${target}`)) {
         matchType = 'endsWith';
       } else if (
-        sel.resolved.includes(` ${target}:`) ||
-        sel.resolved.includes(` ${target}[`)
+        selectorInfo.resolved.includes(` ${target}:`) ||
+        selectorInfo.resolved.includes(` ${target}[`)
       ) {
         matchType = 'endsWith';
       }
@@ -211,9 +258,9 @@ async function findMatchingSelectors(target: string): Promise<SearchResult[]> {
       if (matchType) {
         results.push({
           uri: file,
-          line: sel.line,
-          resolved: sel.resolved,
-          raw: sel.raw,
+          line: selectorInfo.line,
+          resolved: selectorInfo.resolved,
+          raw: selectorInfo.raw,
           matchType,
         });
       }
@@ -245,11 +292,11 @@ export function activate(context: vscode.ExtensionContext) {
         ?? config.get<boolean>('previewOnResultFocus', true);
 
       async function revealResult(result: SearchResult, preview: boolean) {
-        const doc = await vscode.workspace.openTextDocument(result.uri);
+        const document = await vscode.workspace.openTextDocument(result.uri);
 
         // Try to place the cursor on the selector token in its line.
         // Fallback to column 0 if no specific token is found.
-        const lineText = doc.lineAt(result.line).text;
+        const lineText = document.lineAt(result.line).text;
         const rawParts = splitSelectors(result.raw);
         let column = 0;
         let hasColumn = false;
@@ -275,16 +322,16 @@ export function activate(context: vscode.ExtensionContext) {
           }
         }
 
-        const pos = new vscode.Position(result.line, column);
+        const position = new vscode.Position(result.line, column);
 
-        const ed = await vscode.window.showTextDocument(doc, {
+        const editor = await vscode.window.showTextDocument(document, {
           preview,
           preserveFocus: preview,
         });
 
-        ed.selection = new vscode.Selection(pos, pos);
-        ed.revealRange(
-          new vscode.Range(pos, pos),
+        editor.selection = new vscode.Selection(position, position);
+        editor.revealRange(
+          new vscode.Range(position, position),
           vscode.TextEditorRevealType.InCenter,
         );
       }
@@ -327,11 +374,11 @@ export function activate(context: vscode.ExtensionContext) {
       const iconFor = (t: SearchResult['matchType']) =>
         t === 'exact' ? '$(check)' : t === 'pseudoSuffix' ? '$(symbol-event)' : '$(arrow-right)';
 
-      const items: QuickPickItemWithResult[] = results.map((r) => ({
-        label: `${iconFor(r.matchType)} ${r.resolved}`,
-        description: `${vscode.workspace.asRelativePath(r.uri)}:${r.line + 1}`,
-        detail: `raw: ${r.raw}`,
-        result: r,
+      const items: QuickPickItemWithResult[] = results.map((searchResult) => ({
+        label: `${iconFor(searchResult.matchType)} ${searchResult.resolved}`,
+        description: `${vscode.workspace.asRelativePath(searchResult.uri)}:${searchResult.line + 1}`,
+        detail: `raw: ${searchResult.raw}`,
+        result: searchResult,
       }));
 
       if (options?.autoPickFirst) {
@@ -389,7 +436,7 @@ export function activate(context: vscode.ExtensionContext) {
               resolve(undefined);
             }
 
-            disposables.forEach((d) => d.dispose());
+            disposables.forEach((subscription) => subscription.dispose());
             quickPick.dispose();
           }),
         );
@@ -446,12 +493,12 @@ export function activate(context: vscode.ExtensionContext) {
   const extractionCache = new Map<string, ExtractionResult>();
 
   function langFromUri(uri: vscode.Uri): 'html' | 'jsx' | 'tsx' | 'js' | 'ts' | null {
-    const p = uri.fsPath;
-    if (p.endsWith('.html') || p.endsWith('.htm')) { return 'html'; }
-    if (p.endsWith('.jsx')) { return 'jsx'; }
-    if (p.endsWith('.tsx')) { return 'tsx'; }
-    if (p.endsWith('.js') || p.endsWith('.mjs') || p.endsWith('.cjs')) { return 'js'; }
-    if (p.endsWith('.ts') || p.endsWith('.mts') || p.endsWith('.cts')) { return 'ts'; }
+    const filePath = uri.fsPath;
+    if (filePath.endsWith('.html') || filePath.endsWith('.htm')) { return 'html'; }
+    if (filePath.endsWith('.jsx')) { return 'jsx'; }
+    if (filePath.endsWith('.tsx')) { return 'tsx'; }
+    if (filePath.endsWith('.js') || filePath.endsWith('.mjs') || filePath.endsWith('.cjs')) { return 'js'; }
+    if (filePath.endsWith('.ts') || filePath.endsWith('.mts') || filePath.endsWith('.cts')) { return 'ts'; }
     return null;
   }
 
@@ -463,8 +510,10 @@ export function activate(context: vscode.ExtensionContext) {
     const lang = langFromUri(uri);
     if (!lang) { return null; }
 
-    const bytes = await vscode.workspace.fs.readFile(uri);
-    const text = Buffer.from(bytes).toString('utf8');
+    const text = await readWorkspaceTextFile(
+      uri,
+      `getExtraction:readTemplateFile uri="${uri.toString()}"`,
+    );
     const result = extractClassUsages(text, uri.fsPath, lang);
     extractionCache.set(key, result);
     return result;
@@ -475,9 +524,9 @@ export function activate(context: vscode.ExtensionContext) {
 
     const results: ExtractionResult[] = [];
     for (const file of files) {
-      const ext = await getExtraction(file);
-      if (ext && ext.nodes.length > 0) {
-        results.push(ext);
+      const extractionResult = await getExtraction(file);
+      if (extractionResult && extractionResult.nodes.length > 0) {
+        results.push(extractionResult);
       }
     }
     return results;
@@ -524,8 +573,10 @@ export function activate(context: vscode.ExtensionContext) {
     const dedup = new Map<string, vscode.Location>();
 
     for (const file of files) {
-      const bytes = await vscode.workspace.fs.readFile(file);
-      const text = Buffer.from(bytes).toString('utf8');
+      const text = await readWorkspaceTextFile(
+        file,
+        `findLiteralClassTokenLocations:readTemplateFile uri="${file.toString()}"`,
+      );
 
       for (const token of uniqueTokens) {
         const offsets = findExactClassTokenOffsets(text, token);
@@ -536,11 +587,11 @@ export function activate(context: vscode.ExtensionContext) {
           for (let i = 0; i < offset && i < text.length; i++) {
             if (text[i] === '\n') { line++; lastNL = i; }
           }
-          const col = offset - lastNL - 1;
-          const pos = new vscode.Position(line, col);
-          const key = `${file.toString()}:${line}:${col}`;
+          const column = offset - lastNL - 1;
+          const position = new vscode.Position(line, column);
+          const key = `${file.toString()}:${line}:${column}`;
           if (!dedup.has(key)) {
-            dedup.set(key, new vscode.Location(file, pos));
+            dedup.set(key, new vscode.Location(file, position));
           }
         }
       }
@@ -572,10 +623,10 @@ export function activate(context: vscode.ExtensionContext) {
     // Find the nearest selector to the current line
     let best: { resolved: string; distance: number } | null = null;
 
-    for (const sel of selectors) {
-      const distance = Math.abs(sel.line - position.line);
+    for (const selectorInfo of selectors) {
+      const distance = Math.abs(selectorInfo.line - position.line);
       if (best === null || distance < best.distance) {
-        best = { resolved: sel.resolved, distance };
+        best = { resolved: selectorInfo.resolved, distance };
       }
     }
 
@@ -584,9 +635,9 @@ export function activate(context: vscode.ExtensionContext) {
     if (wordRange) {
       const word = document.getText(wordRange);
       // Check if any resolved selector contains this word as a class
-      for (const sel of selectors) {
-        if (sel.resolved.includes(`.${word}`) && sel.line === position.line) {
-          return sel.resolved;
+      for (const selectorInfo of selectors) {
+        if (selectorInfo.resolved.includes(`.${word}`) && selectorInfo.line === position.line) {
+          return selectorInfo.resolved;
         }
       }
     }
@@ -636,9 +687,9 @@ export function activate(context: vscode.ExtensionContext) {
           return fallbackLocations.length > 0 ? fallbackLocations : null;
         }
 
-        return matches.map((m) => {
-          const uri = vscode.Uri.file(m.filePath);
-          return new vscode.Location(uri, new vscode.Position(m.line, m.column));
+        return matches.map((matchResult) => {
+          const uri = vscode.Uri.file(matchResult.filePath);
+          return new vscode.Location(uri, new vscode.Position(matchResult.line, matchResult.column));
         });
       },
     },
@@ -673,9 +724,9 @@ export function activate(context: vscode.ExtensionContext) {
 
         if (matches.length === 0) { return null; }
 
-        return matches.map((m) => {
-          const uri = vscode.Uri.file(m.filePath);
-          return new vscode.Location(uri, new vscode.Position(m.line, m.column));
+        return matches.map((matchResult) => {
+          const uri = vscode.Uri.file(matchResult.filePath);
+          return new vscode.Location(uri, new vscode.Position(matchResult.line, matchResult.column));
         });
       },
     },
@@ -690,10 +741,10 @@ export function activate(context: vscode.ExtensionContext) {
   const findUsagesCmd = vscode.commands.registerCommand(
     'scssClassFinder.findClassUsages',
     async () => {
-      const editor = vscode.window.activeTextEditor;
-      if (!editor) { return; }
+      const activeEditor = vscode.window.activeTextEditor;
+      if (!activeEditor) { return; }
 
-      const selector = resolveTargetSelector(editor.document, editor.selection.active);
+      const selector = resolveTargetSelector(activeEditor.document, activeEditor.selection.active);
       if (!selector) {
         vscode.window.showInformationMessage('No CSS selector found at cursor position');
         return;
@@ -727,11 +778,11 @@ export function activate(context: vscode.ExtensionContext) {
         match: MatchResult;
       }
 
-      const items: UsageQuickPickItem[] = matches.map((m) => ({
-        label: `${iconFor(m.confidence)} ${m.confidence}`,
-        description: `${vscode.workspace.asRelativePath(m.filePath)}:${m.line + 1}`,
-        detail: m.reason,
-        match: m,
+      const items: UsageQuickPickItem[] = matches.map((matchResult) => ({
+        label: `${iconFor(matchResult.confidence)} ${matchResult.confidence}`,
+        description: `${vscode.workspace.asRelativePath(matchResult.filePath)}:${matchResult.line + 1}`,
+        detail: matchResult.reason,
+        match: matchResult,
       }));
 
       const picked = await vscode.window.showQuickPick(items, {
@@ -743,11 +794,11 @@ export function activate(context: vscode.ExtensionContext) {
       if (!picked) { return; }
 
       const uri = vscode.Uri.file(picked.match.filePath);
-      const doc = await vscode.workspace.openTextDocument(uri);
-      const pos = new vscode.Position(picked.match.line, picked.match.column);
-      const ed = await vscode.window.showTextDocument(doc);
-      ed.selection = new vscode.Selection(pos, pos);
-      ed.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+      const document = await vscode.workspace.openTextDocument(uri);
+      const position = new vscode.Position(picked.match.line, picked.match.column);
+      const revealedEditor = await vscode.window.showTextDocument(document);
+      revealedEditor.selection = new vscode.Selection(position, position);
+      revealedEditor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenter);
     },
   );
 

@@ -84,12 +84,12 @@ export function matchSelectorChainMulti(
   chain: SelectorChain,
   extractions: ExtractionResult[],
 ): MatchResult[] {
-  const all: MatchResult[] = [];
-  for (const ext of extractions) {
-    all.push(...matchSelectorChain(chain, ext));
+  const allMatches: MatchResult[] = [];
+  for (const extractionResult of extractions) {
+    allMatches.push(...matchSelectorChain(chain, extractionResult));
   }
-  all.sort((a, b) => b.score - a.score);
-  return all;
+  allMatches.sort((a, b) => b.score - a.score);
+  return allMatches;
 }
 
 // ---------------------------------------------------------------------------
@@ -104,10 +104,10 @@ interface MatchInfo {
 
 function tryMatch(chain: SelectorChain, targetNode: ViewNode): MatchInfo | null {
   const segments = chain.segments;
-  const targetSeg = segments[segments.length - 1];
+  const targetSegment = segments[segments.length - 1];
 
   // Verify target segment matches the node
-  if (!segmentMatchesNode(targetSeg, targetNode)) {
+  if (!segmentMatchesNode(targetSegment, targetNode)) {
     return null;
   }
 
@@ -125,11 +125,10 @@ function tryMatch(chain: SelectorChain, targetNode: ViewNode): MatchInfo | null 
   let matchedSegments = 1; // target already matched
 
   for (let i = segments.length - 2; i >= 0; i--) {
-    const seg = segments[i + 1]; // the segment whose combinator tells us the relationship
-    const ancestorSeg = segments[i];
+    const ancestorSegment = segments[i];
     const combinator = segments[i + 1].combinator;
 
-    const found = findMatchingRelative(ancestorSeg, currentNode!, combinator);
+    const found = findMatchingRelative(ancestorSegment, currentNode!, combinator);
     if (found) {
       currentNode = found;
       matchedSegments++;
@@ -171,7 +170,7 @@ function tryMatch(chain: SelectorChain, targetNode: ViewNode): MatchInfo | null 
 
 function segmentMatchesNode(seg: SelectorSegment, node: ViewNode): boolean {
   // All classes in the segment must be present on the node
-  if (!seg.classes.every((cls) => node.classes.includes(cls))) {
+  if (!seg.classes.every((className) => node.classes.includes(className))) {
     return false;
   }
 
@@ -195,29 +194,29 @@ function segmentMatchesNode(seg: SelectorSegment, node: ViewNode): boolean {
  * to `combinator`.
  */
 function findMatchingRelative(
-  seg: SelectorSegment,
+  segment: SelectorSegment,
   fromNode: ViewNode,
   combinator: 'descendant' | 'child' | 'adjacent' | 'sibling' | 'root',
 ): ViewNode | null {
   switch (combinator) {
     case 'descendant':
-      return findAncestor(seg, fromNode);
+      return findAncestor(segment, fromNode);
     case 'child':
-      return findDirectParent(seg, fromNode);
+      return findDirectParent(segment, fromNode);
     case 'adjacent':
-      return findAdjacentSibling(seg, fromNode);
+      return findAdjacentSibling(segment, fromNode);
     case 'sibling':
-      return findGeneralSibling(seg, fromNode);
+      return findGeneralSibling(segment, fromNode);
     case 'root':
-      return findAncestor(seg, fromNode);
+      return findAncestor(segment, fromNode);
   }
 }
 
 /** Walk up through ancestors at any depth. */
-function findAncestor(seg: SelectorSegment, node: ViewNode): ViewNode | null {
+function findAncestor(segment: SelectorSegment, node: ViewNode): ViewNode | null {
   let current = node.parent;
   while (current) {
-    if (segmentMatchesNode(seg, current)) {
+    if (segmentMatchesNode(segment, current)) {
       return current;
     }
     current = current.parent;
@@ -226,30 +225,30 @@ function findAncestor(seg: SelectorSegment, node: ViewNode): ViewNode | null {
 }
 
 /** Only match direct parent. */
-function findDirectParent(seg: SelectorSegment, node: ViewNode): ViewNode | null {
-  if (node.parent && segmentMatchesNode(seg, node.parent)) {
+function findDirectParent(segment: SelectorSegment, node: ViewNode): ViewNode | null {
+  if (node.parent && segmentMatchesNode(segment, node.parent)) {
     return node.parent;
   }
   return null;
 }
 
 /** Match the immediately preceding sibling (combinator `+`). */
-function findAdjacentSibling(seg: SelectorSegment, node: ViewNode): ViewNode | null {
+function findAdjacentSibling(segment: SelectorSegment, node: ViewNode): ViewNode | null {
   if (!node.parent || node.siblingIndex === 0) { return null; }
-  const prev = node.parent.children[node.siblingIndex - 1];
-  if (prev && segmentMatchesNode(seg, prev)) {
-    return prev;
+  const previousSibling = node.parent.children[node.siblingIndex - 1];
+  if (previousSibling && segmentMatchesNode(segment, previousSibling)) {
+    return previousSibling;
   }
   return null;
 }
 
 /** Match any preceding sibling (combinator `~`). */
-function findGeneralSibling(seg: SelectorSegment, node: ViewNode): ViewNode | null {
+function findGeneralSibling(segment: SelectorSegment, node: ViewNode): ViewNode | null {
   if (!node.parent) { return null; }
   for (let i = node.siblingIndex - 1; i >= 0; i--) {
-    const sib = node.parent.children[i];
-    if (segmentMatchesNode(seg, sib)) {
-      return sib;
+    const siblingNode = node.parent.children[i];
+    if (segmentMatchesNode(segment, siblingNode)) {
+      return siblingNode;
     }
   }
   return null;
@@ -267,10 +266,10 @@ function bestPosition(
   node: ViewNode,
   targetClasses: string[],
 ): { line: number; column: number; offset: number } {
-  for (const cls of targetClasses) {
-    const off = node.classOffsets.get(cls);
-    if (off !== undefined) {
-      return { line: node.line, column: node.column, offset: off };
+  for (const className of targetClasses) {
+    const classOffset = node.classOffsets.get(className);
+    if (classOffset !== undefined) {
+      return { line: node.line, column: node.column, offset: classOffset };
     }
   }
   return { line: node.line, column: node.column, offset: node.offset };
