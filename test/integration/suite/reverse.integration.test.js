@@ -77,6 +77,15 @@ async function run() {
       locations[0].uri.fsPath.endsWith(path.join('app', 'components', 'Settings', 'styles.scss')),
       `Expected aliased @import to resolve to Settings/styles.scss, got: ${locations[0].uri.fsPath}`,
     );
+    assert.ok(
+      locations[0].originSelectionRange,
+      'Expected aliased @import definition to expose originSelectionRange for Ctrl+Click highlighting',
+    );
+    assert.equal(
+      doc.getText(locations[0].originSelectionRange),
+      '~@root/app/components/Settings/styles',
+      'Expected Ctrl+Click highlight to cover the full @import string content',
+    );
   }
 
   // --- Resolve aliased @use path and fall back to .sass ---
@@ -134,6 +143,35 @@ async function run() {
     assert.ok(
       locations[0].uri.fsPath.endsWith(path.join('app', 'components', 'Theme', 'styles.css')),
       `Expected aliased @forward to resolve to Theme/styles.css, got: ${locations[0].uri.fsPath}`,
+    );
+  }
+
+  // --- Resolve aliased @import path to a Sass partial with underscore basename ---
+  {
+    const scssUri = vscode.Uri.file(
+      path.join(workspaceRoot, 'styles', 'sample.scss'),
+    );
+    const doc = await vscode.workspace.openTextDocument(scssUri);
+    await vscode.window.showTextDocument(doc);
+
+    const text = doc.getText();
+    const partialImportPathIdx = text.indexOf('app/styles/common');
+    assert.ok(partialImportPathIdx >= 0, 'Expected to find partial @import path in SCSS fixture');
+    const pos = doc.positionAt(partialImportPathIdx + 'app/styles/'.length + 1);
+
+    const locations = await vscode.commands.executeCommand(
+      'vscode.executeDefinitionProvider',
+      scssUri,
+      pos,
+    );
+
+    assert.ok(
+      locations && locations.length === 1,
+      `Expected one definition result from aliased partial @import path, got: ${(locations ?? []).map((loc) => loc.uri.fsPath).join(', ')}`,
+    );
+    assert.ok(
+      locations[0].uri.fsPath.endsWith(path.join('app', 'styles', '_common.scss')),
+      `Expected aliased @import to resolve to app/styles/_common.scss, got: ${locations[0].uri.fsPath}`,
     );
   }
 

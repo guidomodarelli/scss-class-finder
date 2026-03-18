@@ -69,10 +69,22 @@ export function getStyleImportCandidatePaths(resolvedImportPath: string): string
     return [resolvedImportPath];
   }
 
+  const directoryPath = path.dirname(resolvedImportPath);
+  const basename = path.basename(resolvedImportPath);
+
   return [
     `${resolvedImportPath}.scss`,
     `${resolvedImportPath}.sass`,
     `${resolvedImportPath}.css`,
+    path.join(directoryPath, `_${basename}.scss`),
+    path.join(directoryPath, `_${basename}.sass`),
+    path.join(directoryPath, `_${basename}.css`),
+    path.join(resolvedImportPath, 'index.scss'),
+    path.join(resolvedImportPath, 'index.sass'),
+    path.join(resolvedImportPath, 'index.css'),
+    path.join(resolvedImportPath, '_index.scss'),
+    path.join(resolvedImportPath, '_index.sass'),
+    path.join(resolvedImportPath, '_index.css'),
   ];
 }
 

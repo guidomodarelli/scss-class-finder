@@ -53,10 +53,23 @@ test('findStyleImportReferenceAtPosition: returns null outside the import string
   assert.equal(reference, null);
 });
 
-test('getStyleImportCandidatePaths: prefers scss, then sass, then css', () => {
+test('getStyleImportCandidatePaths: includes direct files, partials, and index files in priority order', () => {
   assert.deepEqual(
     getStyleImportCandidatePaths('/tmp/styles'),
-    ['/tmp/styles.scss', '/tmp/styles.sass', '/tmp/styles.css'],
+    [
+      '/tmp/styles.scss',
+      '/tmp/styles.sass',
+      '/tmp/styles.css',
+      '/tmp/_styles.scss',
+      '/tmp/_styles.sass',
+      '/tmp/_styles.css',
+      '/tmp/styles/index.scss',
+      '/tmp/styles/index.sass',
+      '/tmp/styles/index.css',
+      '/tmp/styles/_index.scss',
+      '/tmp/styles/_index.sass',
+      '/tmp/styles/_index.css',
+    ],
   );
 });
 
@@ -143,6 +156,60 @@ test('resolveStyleImportDefinition: falls back from scss to sass to css', async 
   });
 
   assert.equal(resolvedPath, path.join(targetDir, 'styles.css'));
+});
+
+test('resolveStyleImportDefinition: resolves Sass partials with underscore basename', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'scss-class-finder-'));
+  const workspaceRoot = path.join(tempRoot, 'workspace');
+  const documentDir = path.join(workspaceRoot, 'styles');
+  const targetDir = path.join(workspaceRoot, 'app', 'styles');
+  fs.mkdirSync(documentDir, { recursive: true });
+  fs.mkdirSync(targetDir, { recursive: true });
+
+  fs.writeFileSync(
+    path.join(workspaceRoot, 'package.json'),
+    JSON.stringify({
+      _moduleAliases: {
+        '@root': '.',
+      },
+    }),
+  );
+  fs.writeFileSync(path.join(targetDir, '_common.scss'), '.common { color: black; }');
+
+  const resolvedPath = await resolveStyleImportDefinition({
+    documentPath: path.join(documentDir, 'sample.scss'),
+    workspaceFolderPath: workspaceRoot,
+    importPath: '~@root/app/styles/common',
+  });
+
+  assert.equal(resolvedPath, path.join(targetDir, '_common.scss'));
+});
+
+test('resolveStyleImportDefinition: resolves folder index files when basename file is missing', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'scss-class-finder-'));
+  const workspaceRoot = path.join(tempRoot, 'workspace');
+  const documentDir = path.join(workspaceRoot, 'styles');
+  const targetDir = path.join(workspaceRoot, 'app', 'styles', 'tokens');
+  fs.mkdirSync(documentDir, { recursive: true });
+  fs.mkdirSync(targetDir, { recursive: true });
+
+  fs.writeFileSync(
+    path.join(workspaceRoot, 'package.json'),
+    JSON.stringify({
+      _moduleAliases: {
+        '@root': '.',
+      },
+    }),
+  );
+  fs.writeFileSync(path.join(targetDir, '_index.scss'), '.tokens { color: purple; }');
+
+  const resolvedPath = await resolveStyleImportDefinition({
+    documentPath: path.join(documentDir, 'sample.scss'),
+    workspaceFolderPath: workspaceRoot,
+    importPath: '~@root/app/styles/tokens',
+  });
+
+  assert.equal(resolvedPath, path.join(targetDir, '_index.scss'));
 });
 
 test('resolveStyleImportDefinition: returns null for unknown aliases', async () => {

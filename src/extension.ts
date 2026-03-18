@@ -678,7 +678,7 @@ export function activate(context: vscode.ExtensionContext) {
       async provideDefinition(
         document: vscode.TextDocument,
         position: vscode.Position,
-      ): Promise<vscode.Location[] | null> {
+      ): Promise<vscode.Location[] | vscode.DefinitionLink[] | null> {
         const lineText = document.lineAt(position.line).text;
         const styleImportReference = findStyleImportReferenceAtPosition(
           lineText,
@@ -693,8 +693,19 @@ export function activate(context: vscode.ExtensionContext) {
           });
           if (!resolvedImportPath) { return null; }
 
+          const originSelectionRange = new vscode.Range(
+            new vscode.Position(position.line, styleImportReference.contentStart),
+            new vscode.Position(position.line, styleImportReference.contentEnd),
+          );
+          const targetPosition = new vscode.Position(0, 0);
+
           return [
-            new vscode.Location(vscode.Uri.file(resolvedImportPath), new vscode.Position(0, 0)),
+            {
+              originSelectionRange,
+              targetUri: vscode.Uri.file(resolvedImportPath),
+              targetRange: new vscode.Range(targetPosition, targetPosition),
+              targetSelectionRange: new vscode.Range(targetPosition, targetPosition),
+            },
           ];
         }
 
