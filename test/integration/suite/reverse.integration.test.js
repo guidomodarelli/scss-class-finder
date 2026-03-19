@@ -292,6 +292,34 @@ async function run() {
     }
   }
 
+  // --- CSS function tokens should keep the default editor behavior (no reverse class navigation) ---
+  {
+    const scssUri = vscode.Uri.file(
+      path.join(workspaceRoot, 'styles', 'sample.scss'),
+    );
+    const doc = await vscode.workspace.openTextDocument(scssUri);
+    await vscode.window.showTextDocument(doc);
+
+    const functionNames = ['hsl', 'var', 'string'];
+
+    for (const functionName of functionNames) {
+      const functionIndex = doc.getText().indexOf(`${functionName}(`);
+      assert.ok(functionIndex >= 0, `Expected to find "${functionName}(" in SCSS fixture`);
+      const pos = doc.positionAt(functionIndex + 1);
+
+      const locations = await vscode.commands.executeCommand(
+        'vscode.executeDefinitionProvider',
+        scssUri,
+        pos,
+      );
+
+      assert.ok(
+        !locations || locations.length === 0,
+        `Expected no reverse definition results for CSS function "${functionName}()", got: ${(locations ?? []).map((loc) => loc.uri.fsPath).join(', ')}`,
+      );
+    }
+  }
+
   // --- Verify the findClassUsages command is registered ---
   {
     const commands = await vscode.commands.getCommands(true);

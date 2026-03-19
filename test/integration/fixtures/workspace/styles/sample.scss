@@ -65,3 +65,17 @@
     padding: var(--brand-spacing-24, 24px) var(--brand-spacing-32, 32px);
   }
 }
+
+.color-preview {
+  position: absolute;
+  background-color: hsl(0deg 0% 100% / 90%);
+}
+
+.content-label {
+  content: string(title);
+}
+
+.accessibility {
+  background: var(--color-white, #fff);
+  overflow: hidden;
+}

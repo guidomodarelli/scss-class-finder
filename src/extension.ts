@@ -276,6 +276,41 @@ function getCssCustomPropertyAtPosition(
   };
 }
 
+function isPositionWithinSelectorPrelude(
+  lineText: string,
+  character: number,
+): boolean {
+  const openingBraceIndex = lineText.indexOf('{');
+  if (openingBraceIndex >= 0 && character > openingBraceIndex) {
+    return false;
+  }
+
+  const semicolonIndex = lineText.indexOf(';');
+  if (semicolonIndex >= 0 && character > semicolonIndex) {
+    return false;
+  }
+
+  return true;
+}
+
+function isFunctionTokenAtPosition(
+  document: vscode.TextDocument,
+  position: vscode.Position,
+): boolean {
+  const text = document.getText();
+  const tokenMatch = findClassTokenAtOffset(text, document.offsetAt(position));
+  if (!tokenMatch) {
+    return false;
+  }
+
+  let nextOffset = tokenMatch.end;
+  while (nextOffset < text.length && /\s/.test(text[nextOffset])) {
+    nextOffset += 1;
+  }
+
+  return text[nextOffset] === '(';
+}
+
 function escapeForRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -729,6 +764,10 @@ export function activate(context: vscode.ExtensionContext) {
       return null;
     }
 
+    if (isFunctionTokenAtPosition(document, position)) {
+      return null;
+    }
+
     if (isSassVariableAtPosition(document, position)) {
       return null;
     }
@@ -740,6 +779,9 @@ export function activate(context: vscode.ExtensionContext) {
 
     const text = document.getText();
     const selectors = resolveSelectors(text);
+    const selectorsOnCurrentLine = selectors.filter((selectorInfo) => selectorInfo.line === position.line);
+    const isWithinSelectorPrelude = selectorsOnCurrentLine.length > 0
+      && isPositionWithinSelectorPrelude(lineText, position.character);
 
     // Find the nearest selector to the current line
     let best: { resolved: string; distance: number } | null = null;
@@ -763,12 +805,13 @@ export function activate(context: vscode.ExtensionContext) {
       }
     }
 
-    if (best && best.distance <= 2) {
+    if (best && best.distance === 0 && isWithinSelectorPrelude) {
       return best.resolved;
     }
 
-    // Fallback: use word under cursor as simple class
-    if (classToken) {
+    // Fallback: use word under cursor as simple class only when still inside
+    // the selector prelude for the current line.
+    if (classToken && isWithinSelectorPrelude) {
       const word = classToken.value;
       if (word) { return `.${word}`; }
     }
