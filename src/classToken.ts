@@ -43,3 +43,21 @@ export function findClassTokenAtOffset(text: string, offset: number): ClassToken
     end,
   };
 }
+
+export function findSassVariableAtOffset(text: string, offset: number): ClassTokenMatch | null {
+  const classToken = findClassTokenAtOffset(text, offset);
+  if (!classToken) {
+    return null;
+  }
+
+  const variablePrefixOffset = classToken.start - 1;
+  if (variablePrefixOffset < 0 || text[variablePrefixOffset] !== '$') {
+    return null;
+  }
+
+  return {
+    value: text.slice(variablePrefixOffset, classToken.end),
+    start: variablePrefixOffset,
+    end: classToken.end,
+  };
+}

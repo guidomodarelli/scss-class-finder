@@ -200,6 +200,37 @@ async function run() {
     );
   }
 
+  // --- Sass variables should not be treated as class reverse navigation targets ---
+  {
+    const scssUri = vscode.Uri.file(
+      path.join(workspaceRoot, 'styles', 'sample.scss'),
+    );
+    const doc = await vscode.workspace.openTextDocument(scssUri);
+    await vscode.window.showTextDocument(doc);
+
+    const text = doc.getText();
+    const variableIdx = text.indexOf('$gray-300');
+    assert.ok(variableIdx >= 0, 'Expected to find "$gray-300" in SCSS fixture');
+    const pos = doc.positionAt(variableIdx + 2);
+
+    const locations = await vscode.commands.executeCommand(
+      'vscode.executeDefinitionProvider',
+      scssUri,
+      pos,
+    );
+
+    const hasCodeTarget = (locations ?? []).some((loc) => {
+      const filePath = loc.uri.fsPath;
+      return filePath.endsWith('.jsx') || filePath.endsWith('.tsx') || filePath.endsWith('.html');
+    });
+
+    assert.equal(
+      hasCodeTarget,
+      false,
+      'Expected Sass variable navigation to avoid reverse class usages in JSX/HTML',
+    );
+  }
+
   // --- Verify the findClassUsages command is registered ---
   {
     const commands = await vscode.commands.getCommands(true);

@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { findClassTokenAtOffset } = require('../out/classToken.js');
+const { findClassTokenAtOffset, findSassVariableAtOffset } = require('../out/classToken.js');
 
 test('findClassTokenAtOffset: resolves full hyphenated class from any token character', () => {
   const text = '<div className="card-header">Hello</div>';
@@ -51,4 +51,22 @@ test('findClassTokenAtOffset: returns null outside a class token', () => {
   const quoteOffset = text.indexOf('"');
 
   assert.equal(findClassTokenAtOffset(text, quoteOffset), null);
+});
+
+test('findSassVariableAtOffset: resolves full Sass variable name', () => {
+  const text = '$gray-300: #d1d5db;';
+  const start = text.indexOf('gray-300');
+
+  assert.deepEqual(findSassVariableAtOffset(text, start + 4), {
+    value: '$gray-300',
+    start: start - 1,
+    end: start - 1 + '$gray-300'.length,
+  });
+});
+
+test('findSassVariableAtOffset: returns null for plain class-like tokens', () => {
+  const text = '.gray-300 { color: red; }';
+  const start = text.indexOf('gray-300');
+
+  assert.equal(findSassVariableAtOffset(text, start + 2), null);
 });

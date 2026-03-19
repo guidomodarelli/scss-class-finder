@@ -3,7 +3,11 @@ import * as path from 'path';
 import { resolveSelectors, splitSelectors } from './selectorResolver';
 import { parseSelectorToIR, getTargetClasses } from './selectorIR';
 import { extractClassUsages, ExtractionResult } from './classExtractor';
-import { findClassTokenAtOffset, isClassTokenCharacter } from './classToken';
+import {
+  findClassTokenAtOffset,
+  findSassVariableAtOffset,
+  isClassTokenCharacter,
+} from './classToken';
 import { matchSelectorChainMulti, MatchResult, MatchConfidence } from './structuralMatcher';
 import {
   findStyleImportReferenceAtPosition,
@@ -242,6 +246,14 @@ function getClassTokenAtPosition(
       document.positionAt(tokenMatch.end),
     ),
   };
+}
+
+function isSassVariableAtPosition(
+  document: vscode.TextDocument,
+  position: vscode.Position,
+): boolean {
+  const text = document.getText();
+  return findSassVariableAtOffset(text, document.offsetAt(position)) !== null;
 }
 
 // ---------------------------------------------------------------------------
@@ -644,6 +656,10 @@ export function activate(context: vscode.ExtensionContext) {
     document: vscode.TextDocument,
     position: vscode.Position,
   ): string | null {
+    if (isSassVariableAtPosition(document, position)) {
+      return null;
+    }
+
     const lineText = document.lineAt(position.line).text;
     if (findStyleImportReferenceAtPosition(lineText, position.character)) {
       return null;
