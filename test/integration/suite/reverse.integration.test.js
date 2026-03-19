@@ -231,6 +231,67 @@ async function run() {
     );
   }
 
+  // --- CSS custom properties should resolve to their declarations, not to class usages ---
+  {
+    const scssUri = vscode.Uri.file(
+      path.join(workspaceRoot, 'styles', 'sample.scss'),
+    );
+    const doc = await vscode.workspace.openTextDocument(scssUri);
+    await vscode.window.showTextDocument(doc);
+
+    const usageToDefinitionExpectations = [
+      '--brand-spacing-16',
+      '--brand-spacing-24',
+      '--brand-spacing-32',
+    ];
+
+    for (const customPropertyName of usageToDefinitionExpectations) {
+      const usageIndex = doc.getText().lastIndexOf(customPropertyName);
+      assert.ok(usageIndex >= 0, `Expected to find "${customPropertyName}" in SCSS fixture`);
+      const pos = doc.positionAt(usageIndex + 4);
+
+      const locations = await vscode.commands.executeCommand(
+        'vscode.executeDefinitionProvider',
+        scssUri,
+        pos,
+      );
+
+      assert.ok(
+        locations && locations.length > 0,
+        `Expected definition results for CSS custom property "${customPropertyName}"`,
+      );
+
+      const hasCodeTarget = locations.some((loc) => {
+        const filePath = loc.uri.fsPath;
+        return filePath.endsWith('.jsx') || filePath.endsWith('.tsx') || filePath.endsWith('.html');
+      });
+      assert.equal(
+        hasCodeTarget,
+        false,
+        `Expected "${customPropertyName}" to avoid reverse class usages in JSX/HTML`,
+      );
+
+      const hasStyleDefinitionTarget = locations.some((loc) =>
+        loc.uri.fsPath.endsWith(path.join('styles', 'sample.scss')),
+      );
+      assert.equal(
+        hasStyleDefinitionTarget,
+        true,
+        `Expected "${customPropertyName}" to resolve inside sample.scss`,
+      );
+
+      assert.ok(
+        locations[0].originSelectionRange,
+        `Expected "${customPropertyName}" definition to expose originSelectionRange`,
+      );
+      assert.equal(
+        doc.getText(locations[0].originSelectionRange),
+        customPropertyName,
+        `Expected Ctrl+Click highlight to cover the full custom property "${customPropertyName}"`,
+      );
+    }
+  }
+
   // --- Verify the findClassUsages command is registered ---
   {
     const commands = await vscode.commands.getCommands(true);

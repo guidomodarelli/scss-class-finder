@@ -1,7 +1,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { findClassTokenAtOffset, findSassVariableAtOffset } = require('../out/classToken.js');
+const {
+  findClassTokenAtOffset,
+  findCssCustomPropertyAtOffset,
+  findSassVariableAtOffset,
+} = require('../out/classToken.js');
 
 test('findClassTokenAtOffset: resolves full hyphenated class from any token character', () => {
   const text = '<div className="card-header">Hello</div>';
@@ -69,4 +73,29 @@ test('findSassVariableAtOffset: returns null for plain class-like tokens', () =>
   const start = text.indexOf('gray-300');
 
   assert.equal(findSassVariableAtOffset(text, start + 2), null);
+});
+
+test('findCssCustomPropertyAtOffset: resolves full custom property name', () => {
+  const text = 'gap: var(--brand-spacing-16, 16px);';
+  const start = text.indexOf('--brand-spacing-16');
+
+  assert.deepEqual(findCssCustomPropertyAtOffset(text, start + 9), {
+    value: '--brand-spacing-16',
+    start,
+    end: start + '--brand-spacing-16'.length,
+  });
+});
+
+test('findCssCustomPropertyAtOffset: returns null for regular class tokens', () => {
+  const text = '.brand-spacing-16 { gap: 16px; }';
+  const start = text.indexOf('brand-spacing-16');
+
+  assert.equal(findCssCustomPropertyAtOffset(text, start + 3), null);
+});
+
+test('findCssCustomPropertyAtOffset: returns null for BEM modifier selectors', () => {
+  const text = '&--active { color: red; }';
+  const start = text.indexOf('--active');
+
+  assert.equal(findCssCustomPropertyAtOffset(text, start + 3), null);
 });

@@ -4,6 +4,7 @@ import { resolveSelectors, splitSelectors } from './selectorResolver';
 import { parseSelectorToIR, getTargetClasses } from './selectorIR';
 import { extractClassUsages, ExtractionResult } from './classExtractor';
 import {
+  findCssCustomPropertyAtOffset,
   findClassTokenAtOffset,
   findSassVariableAtOffset,
   isClassTokenCharacter,
@@ -254,6 +255,74 @@ function isSassVariableAtPosition(
 ): boolean {
   const text = document.getText();
   return findSassVariableAtOffset(text, document.offsetAt(position)) !== null;
+}
+
+function getCssCustomPropertyAtPosition(
+  document: vscode.TextDocument,
+  position: vscode.Position,
+): { value: string; range: vscode.Range } | null {
+  const text = document.getText();
+  const tokenMatch = findCssCustomPropertyAtOffset(text, document.offsetAt(position));
+  if (!tokenMatch) {
+    return null;
+  }
+
+  return {
+    value: tokenMatch.value,
+    range: new vscode.Range(
+      document.positionAt(tokenMatch.start),
+      document.positionAt(tokenMatch.end),
+    ),
+  };
+}
+
+function escapeForRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+async function findCssCustomPropertyDefinitionLinks(
+  document: vscode.TextDocument,
+  position: vscode.Position,
+): Promise<vscode.DefinitionLink[] | null> {
+  const customProperty = getCssCustomPropertyAtPosition(document, position);
+  if (!customProperty) {
+    return null;
+  }
+
+  const files = await findWorkspaceFiles('**/*.{scss,sass,css}');
+  const definitionPattern = new RegExp(
+    `(^|[^A-Za-z0-9_-])(${escapeForRegExp(customProperty.value)})\\s*:`,
+    'gm',
+  );
+  const definitionLinks: vscode.DefinitionLink[] = [];
+
+  for (const fileUri of files) {
+    definitionPattern.lastIndex = 0;
+    const text = await readWorkspaceTextFile(
+      fileUri,
+      `findCssCustomPropertyDefinitionLinks:readStyleFile property="${customProperty.value}"`,
+    );
+    const targetDocument = await vscode.workspace.openTextDocument(fileUri);
+
+    let definitionMatch: RegExpExecArray | null;
+    while ((definitionMatch = definitionPattern.exec(text)) !== null) {
+      const definitionStart = definitionMatch.index + definitionMatch[1].length;
+      const definitionEnd = definitionStart + customProperty.value.length;
+      const targetRange = new vscode.Range(
+        targetDocument.positionAt(definitionStart),
+        targetDocument.positionAt(definitionEnd),
+      );
+
+      definitionLinks.push({
+        originSelectionRange: customProperty.range,
+        targetUri: fileUri,
+        targetRange,
+        targetSelectionRange: targetRange,
+      });
+    }
+  }
+
+  return definitionLinks.length > 0 ? definitionLinks : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -656,6 +725,10 @@ export function activate(context: vscode.ExtensionContext) {
     document: vscode.TextDocument,
     position: vscode.Position,
   ): string | null {
+    if (getCssCustomPropertyAtPosition(document, position)) {
+      return null;
+    }
+
     if (isSassVariableAtPosition(document, position)) {
       return null;
     }
@@ -746,6 +819,14 @@ export function activate(context: vscode.ExtensionContext) {
               targetSelectionRange: new vscode.Range(targetPosition, targetPosition),
             },
           ];
+        }
+
+        const cssCustomPropertyDefinitions = await findCssCustomPropertyDefinitionLinks(
+          document,
+          position,
+        );
+        if (cssCustomPropertyDefinitions) {
+          return cssCustomPropertyDefinitions;
         }
 
         const selector = resolveTargetSelector(document, position);

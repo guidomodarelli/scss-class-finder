@@ -4,6 +4,12 @@
 @import '~@root/app/styles/common';
 @import '~@missing/app/components/Missing/styles';
 
+:root {
+  --brand-spacing-16: 16px;
+  --brand-spacing-24: 24px;
+  --brand-spacing-32: 32px;
+}
+
 .card {
   &-header {
     color: red;
@@ -51,4 +57,11 @@
 
 .literal-only {
   color: black;
+}
+
+.card {
+  &__access-row {
+    gap: var(--brand-spacing-16, 16px);
+    padding: var(--brand-spacing-24, 24px) var(--brand-spacing-32, 32px);
+  }
 }

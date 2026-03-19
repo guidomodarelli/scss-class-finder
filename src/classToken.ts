@@ -61,3 +61,21 @@ export function findSassVariableAtOffset(text: string, offset: number): ClassTok
     end: classToken.end,
   };
 }
+
+export function findCssCustomPropertyAtOffset(text: string, offset: number): ClassTokenMatch | null {
+  const classToken = findClassTokenAtOffset(text, offset);
+  if (!classToken) {
+    return null;
+  }
+
+  if (!classToken.value.startsWith('--')) {
+    return null;
+  }
+
+  const previousCharacter = classToken.start > 0 ? text[classToken.start - 1] : undefined;
+  if (previousCharacter === '.' || previousCharacter === '&' || previousCharacter === '#') {
+    return null;
+  }
+
+  return classToken;
+}
