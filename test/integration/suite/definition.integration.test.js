@@ -37,6 +37,12 @@ async function run() {
       loc.uri.fsPath.endsWith(path.join('styles', 'sample.scss')),
       `Expected definition in sample.scss, got ${loc.uri.fsPath}`,
     );
+    assert.ok(loc.originSelectionRange, 'Expected the provider to return originSelectionRange');
+    assert.equal(
+      doc.getText(loc.originSelectionRange),
+      'card-header',
+      'Expected full hyphenated class to be underlined',
+    );
   }
 
   // --- endsWith match: "title" in JSX → ".card .title" in SCSS ---

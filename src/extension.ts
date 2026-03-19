@@ -3,6 +3,7 @@ import * as path from 'path';
 import { resolveSelectors, splitSelectors } from './selectorResolver';
 import { parseSelectorToIR, getTargetClasses } from './selectorIR';
 import { extractClassUsages, ExtractionResult } from './classExtractor';
+import { findClassTokenAtOffset, isClassTokenCharacter } from './classToken';
 import { matchSelectorChainMulti, MatchResult, MatchConfidence } from './structuralMatcher';
 import {
   findStyleImportReferenceAtPosition,
@@ -224,6 +225,25 @@ interface FindClassCommandOptions {
   suppressNoResultsMessage?: boolean;
 }
 
+function getClassTokenAtPosition(
+  document: vscode.TextDocument,
+  position: vscode.Position,
+): { value: string; range: vscode.Range } | null {
+  const text = document.getText();
+  const tokenMatch = findClassTokenAtOffset(text, document.offsetAt(position));
+  if (!tokenMatch) {
+    return null;
+  }
+
+  return {
+    value: tokenMatch.value,
+    range: new vscode.Range(
+      document.positionAt(tokenMatch.start),
+      document.positionAt(tokenMatch.end),
+    ),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Shared search logic
 // ---------------------------------------------------------------------------
@@ -344,12 +364,9 @@ export function activate(context: vscode.ExtensionContext) {
       const editor = vscode.window.activeTextEditor;
       let defaultValue = '';
       if (editor) {
-        const range = editor.document.getWordRangeAtPosition(
-          editor.selection.active,
-          /[\w-]+/,
-        );
-        if (range) {
-          defaultValue = editor.document.getText(range);
+        const classToken = getClassTokenAtPosition(editor.document, editor.selection.active);
+        if (classToken) {
+          defaultValue = classToken.value;
         }
       }
 
@@ -471,19 +488,25 @@ export function activate(context: vscode.ExtensionContext) {
       async provideDefinition(
         document: vscode.TextDocument,
         position: vscode.Position,
-      ): Promise<vscode.Location[] | null> {
-        const range = document.getWordRangeAtPosition(position, /[\w-]+/);
-        if (!range) { return null; }
+      ): Promise<vscode.DefinitionLink[] | null> {
+        const classToken = getClassTokenAtPosition(document, position);
+        if (!classToken) { return null; }
 
-        const word = document.getText(range);
-        if (!word) { return null; }
-
-        const target = `.${word}`;
+        const target = `.${classToken.value}`;
         const results = await findMatchingSelectors(target);
 
         if (results.length === 0) { return null; }
 
-        return results.map((r) => new vscode.Location(r.uri, new vscode.Position(r.line, 0)));
+        return results.map((result) => {
+          const targetPosition = new vscode.Position(result.line, 0);
+
+          return {
+            originSelectionRange: classToken.range,
+            targetUri: result.uri,
+            targetRange: new vscode.Range(targetPosition, targetPosition),
+            targetSelectionRange: new vscode.Range(targetPosition, targetPosition),
+          };
+        });
       },
     },
   );
@@ -541,7 +564,7 @@ export function activate(context: vscode.ExtensionContext) {
   // ---------------------------------------------------------------------------
 
   function isClassTokenChar(ch: string | undefined): boolean {
-    return !!ch && /[A-Za-z0-9_-]/.test(ch);
+    return isClassTokenCharacter(ch);
   }
 
   function findExactClassTokenOffsets(text: string, token: string): number[] {
@@ -640,9 +663,9 @@ export function activate(context: vscode.ExtensionContext) {
     }
 
     // Also try to match a word under cursor as a class name
-    const wordRange = document.getWordRangeAtPosition(position, /[\w-]+/);
-    if (wordRange) {
-      const word = document.getText(wordRange);
+    const classToken = getClassTokenAtPosition(document, position);
+    if (classToken) {
+      const word = classToken.value;
       // Check if any resolved selector contains this word as a class
       for (const selectorInfo of selectors) {
         if (selectorInfo.resolved.includes(`.${word}`) && selectorInfo.line === position.line) {
@@ -656,8 +679,8 @@ export function activate(context: vscode.ExtensionContext) {
     }
 
     // Fallback: use word under cursor as simple class
-    if (wordRange) {
-      const word = document.getText(wordRange);
+    if (classToken) {
+      const word = classToken.value;
       if (word) { return `.${word}`; }
     }
 
