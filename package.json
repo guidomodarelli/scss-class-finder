@@ -3,7 +3,7 @@
   "publisher": "guidomodarelli",
   "displayName": "SCSS Class Finder",
   "description": "Resolve nested SCSS selectors, jump between styles and code, find class usages, and follow aliased style imports in VS Code",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "icon": "scss-class-finder.png",
   "engines": {
     "vscode": "^1.80.0"
