@@ -148,3 +148,30 @@ The script:
 - reads the extension `name` and `version` from `package.json`,
 - installs the generated `.vsix` with the `code` CLI,
 - uses `jq` when available and falls back to `cut` if `jq` is not installed.
+
+## 🌐 Publish to the VS Code Marketplace
+
+This repository is configured to publish under the `guidomodarelli` publisher declared in `package.json`.
+If your Marketplace publisher uses a different name, update the `publisher` field before publishing.
+
+```bash
+# Install dependencies
+npm install
+
+# Validate the extension locally
+npm test
+npm run package
+
+# Authenticate once with your Personal Access Token
+npx @vscode/vsce login guidomodarelli
+
+# Publish the current version from package.json
+npm run publish:vsce
+```
+
+Recommended release flow:
+
+1. Update `version` in `package.json`.
+2. Run `npm test`.
+3. Run `npm run package` to verify the `.vsix` is generated correctly.
+4. Publish with `npm run publish:vsce`.
