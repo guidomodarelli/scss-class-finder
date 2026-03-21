@@ -2,7 +2,7 @@
   "name": "scss-class-finder",
   "publisher": "guidomodarelli",
   "displayName": "SCSS Class Finder",
-  "description": "Find SCSS classes by their resolved selector, handling nesting and & (parent selector)",
+  "description": "Resolve nested SCSS selectors, jump between styles and code, find class usages, and follow aliased style imports in VS Code",
   "version": "0.1.0",
   "icon": "scss-class-finder.png",
   "engines": {
