@@ -1124,7 +1124,13 @@ export function activate(context: vscode.ExtensionContext) {
 
         return matches.map((matchResult) => {
           const uri = vscode.Uri.file(matchResult.filePath);
-          return new vscode.Location(uri, new vscode.Position(matchResult.line, matchResult.column));
+          const targetDocument = vscode.workspace.textDocuments.find((document) =>
+            document.uri.toString() === uri.toString());
+          const position = targetDocument
+            ? targetDocument.positionAt(matchResult.offset)
+            : new vscode.Position(matchResult.line, matchResult.column);
+
+          return new vscode.Location(uri, position);
         });
       },
     },

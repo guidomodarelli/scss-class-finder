@@ -48,6 +48,22 @@ async function run() {
       hasCodeTarget,
       `Expected reverse definition to point to JSX/HTML, got: ${locations.map((l) => l.uri.fsPath).join(', ')}`,
     );
+
+    const jsxTarget = locations.find((loc) => loc.uri.fsPath.endsWith(path.join('components', 'Sample.jsx')));
+    assert.ok(jsxTarget, 'Expected one reverse definition result to point to components/Sample.jsx');
+
+    const targetDoc = await vscode.workspace.openTextDocument(jsxTarget.uri);
+    const targetOffset = targetDoc.offsetAt(jsxTarget.range.start);
+    const highlightedText = targetDoc.getText(new vscode.Range(
+      jsxTarget.range.start,
+      targetDoc.positionAt(targetOffset + 'card-header'.length),
+    ));
+
+    assert.equal(
+      highlightedText,
+      'card-header',
+      'Expected reverse definition to position the cursor on the exact class token',
+    );
   }
 
   // --- Resolve aliased @import path to the target style file ---

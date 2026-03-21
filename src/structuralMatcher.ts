@@ -269,7 +269,11 @@ function bestPosition(
   for (const className of targetClasses) {
     const classOffset = node.classOffsets.get(className);
     if (classOffset !== undefined) {
-      return { line: node.line, column: node.column, offset: classOffset };
+      return {
+        line: node.line,
+        column: classOffset - node.offset + node.column,
+        offset: classOffset,
+      };
     }
   }
   return { line: node.line, column: node.column, offset: node.offset };
