@@ -354,7 +354,7 @@ async function run() {
     );
   }
 
-  // --- Literal fallback: structural match empty → exact token search ---
+  // --- Reverse navigation must ignore plain strings and JS symbols with matching names ---
   {
     const scssUri = vscode.Uri.file(
       path.join(workspaceRoot, 'styles', 'sample.scss'),
@@ -363,9 +363,9 @@ async function run() {
     await vscode.window.showTextDocument(doc);
 
     const text = doc.getText();
-    const literalIdx = text.indexOf('.literal-only');
-    assert.ok(literalIdx >= 0, 'Expected to find ".literal-only" in SCSS fixture');
-    const pos = doc.positionAt(literalIdx + 1); // position on "literal-only"
+    const classIdx = text.indexOf('.usersExternalCreate');
+    assert.ok(classIdx >= 0, 'Expected to find ".usersExternalCreate" in SCSS fixture');
+    const pos = doc.positionAt(classIdx + 1);
 
     const locations = await vscode.commands.executeCommand(
       'vscode.executeDefinitionProvider',
@@ -374,17 +374,8 @@ async function run() {
     );
 
     assert.ok(
-      locations && locations.length > 0,
-      'Expected reverse definition fallback results for ".literal-only"',
-    );
-
-    const hasSampleTarget = locations.some((loc) =>
-      loc.uri.fsPath.endsWith(path.join('components', 'Sample.jsx')),
-    );
-
-    assert.ok(
-      hasSampleTarget,
-      'Expected at least one fallback location in components/Sample.jsx',
+      !locations || locations.length === 0,
+      `Expected no reverse definition results for ".usersExternalCreate", got: ${(locations ?? []).map((loc) => loc.uri.fsPath).join(', ')}`,
     );
   }
 }

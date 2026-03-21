@@ -59,6 +59,10 @@
   color: black;
 }
 
+.usersExternalCreate {
+  display: block;
+}
+
 .card {
   &__access-row {
     gap: var(--brand-spacing-16, 16px);

@@ -249,6 +249,194 @@ function getClassTokenAtPosition(
   };
 }
 
+function getStyleModuleIdentifiers(documentText: string): Set<string> {
+  const identifiers = new Set<string>();
+  const importPatterns = [
+    /\bimport\s+([A-Za-z_$][\w$]*)\s*(?:,\s*\{[^}]*\})?\s+from\s+['"][^'"]+\.(?:scss|sass|css)['"]/g,
+    /\bimport\s+\*\s+as\s+([A-Za-z_$][\w$]*)\s+from\s+['"][^'"]+\.(?:scss|sass|css)['"]/g,
+    /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*require\(\s*['"][^'"]+\.(?:scss|sass|css)['"]\s*\)/g,
+  ];
+
+  for (const importPattern of importPatterns) {
+    let importMatch: RegExpExecArray | null;
+    const pattern = new RegExp(importPattern.source, 'g');
+    while ((importMatch = pattern.exec(documentText)) !== null) {
+      identifiers.add(importMatch[1]);
+    }
+  }
+
+  return identifiers;
+}
+
+function tryResolveStyleModuleObjectIdentifier(
+  text: string,
+  objectExpressionEnd: number,
+  styleModuleIdentifiers: Set<string>,
+): string | null {
+  let cursor = objectExpressionEnd;
+
+  while (cursor >= 0 && /\s/.test(text[cursor])) {
+    cursor -= 1;
+  }
+
+  if (cursor >= 0 && text[cursor] === '?') {
+    cursor -= 1;
+    while (cursor >= 0 && /\s/.test(text[cursor])) {
+      cursor -= 1;
+    }
+  }
+
+  if (cursor < 0 || !/[A-Za-z0-9_$]/.test(text[cursor])) {
+    return null;
+  }
+
+  let identifierStart = cursor;
+  while (identifierStart > 0 && /[A-Za-z0-9_$]/.test(text[identifierStart - 1])) {
+    identifierStart -= 1;
+  }
+
+  const identifier = text.slice(identifierStart, cursor + 1);
+  return styleModuleIdentifiers.has(identifier) ? identifier : null;
+}
+
+function getStyleModuleClassTokenAtOffset(
+  text: string,
+  offset: number,
+  styleModuleIdentifiers: Set<string>,
+): { value: string; start: number; end: number } | null {
+  if (styleModuleIdentifiers.size === 0) {
+    return null;
+  }
+
+  const tokenMatch = findClassTokenAtOffset(text, offset);
+  if (!tokenMatch) {
+    return null;
+  }
+
+  let cursor = tokenMatch.start - 1;
+  while (cursor >= 0 && /\s/.test(text[cursor])) {
+    cursor -= 1;
+  }
+
+  if (cursor >= 0 && text[cursor] === '.') {
+    const styleIdentifier = tryResolveStyleModuleObjectIdentifier(
+      text,
+      cursor - 1,
+      styleModuleIdentifiers,
+    );
+    if (styleIdentifier) {
+      return tokenMatch;
+    }
+  }
+
+  const quoteCharacter = tokenMatch.start > 0 ? text[tokenMatch.start - 1] : '';
+  if (
+    (quoteCharacter === '"' || quoteCharacter === '\'')
+    && tokenMatch.end < text.length
+    && text[tokenMatch.end] === quoteCharacter
+  ) {
+    cursor = tokenMatch.start - 2;
+    while (cursor >= 0 && /\s/.test(text[cursor])) {
+      cursor -= 1;
+    }
+
+    if (cursor >= 0 && text[cursor] === '[') {
+      const styleIdentifier = tryResolveStyleModuleObjectIdentifier(
+        text,
+        cursor - 1,
+        styleModuleIdentifiers,
+      );
+      if (styleIdentifier) {
+        return tokenMatch;
+      }
+    }
+  }
+
+  return null;
+}
+
+function findExtractedClassTokenAtOffset(
+  extraction: ExtractionResult,
+  offset: number,
+): { value: string; start: number; end: number } | null {
+  for (const node of extraction.nodes) {
+    for (const [className, classOffset] of node.classOffsets) {
+      const classEnd = classOffset + className.length;
+      if (offset >= classOffset && offset <= classEnd) {
+        return {
+          value: className,
+          start: classOffset,
+          end: classEnd,
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
+function getDocumentExtractionLanguage(
+  document: vscode.TextDocument,
+): 'html' | 'jsx' | 'tsx' | 'js' | 'ts' | null {
+  switch (document.languageId) {
+    case 'html':
+      return 'html';
+    case 'javascriptreact':
+      return 'jsx';
+    case 'typescriptreact':
+      return 'tsx';
+    case 'javascript':
+      return 'js';
+    case 'typescript':
+      return 'ts';
+    default:
+      return null;
+  }
+}
+
+async function getForwardDefinitionClassTokenAtPosition(
+  document: vscode.TextDocument,
+  position: vscode.Position,
+): Promise<{ value: string; range: vscode.Range } | null> {
+  const offset = document.offsetAt(position);
+  const text = document.getText();
+  const extractionLanguage = getDocumentExtractionLanguage(document);
+  const extraction = extractionLanguage
+    ? extractClassUsages(text, document.uri.fsPath, extractionLanguage)
+    : null;
+  const extractedClassToken = extraction
+    ? findExtractedClassTokenAtOffset(extraction, offset)
+    : null;
+
+  if (extractedClassToken) {
+    return {
+      value: extractedClassToken.value,
+      range: new vscode.Range(
+        document.positionAt(extractedClassToken.start),
+        document.positionAt(extractedClassToken.end),
+      ),
+    };
+  }
+
+  const styleModuleIdentifiers = getStyleModuleIdentifiers(text);
+  const styleModuleClassToken = getStyleModuleClassTokenAtOffset(
+    text,
+    offset,
+    styleModuleIdentifiers,
+  );
+  if (!styleModuleClassToken) {
+    return null;
+  }
+
+  return {
+    value: styleModuleClassToken.value,
+    range: new vscode.Range(
+      document.positionAt(styleModuleClassToken.start),
+      document.positionAt(styleModuleClassToken.end),
+    ),
+  };
+}
+
 function isSassVariableAtPosition(
   document: vscode.TextDocument,
   position: vscode.Position,
@@ -605,7 +793,7 @@ export function activate(context: vscode.ExtensionContext) {
         document: vscode.TextDocument,
         position: vscode.Position,
       ): Promise<vscode.DefinitionLink[] | null> {
-        const classToken = getClassTokenAtPosition(document, position);
+        const classToken = await getForwardDefinitionClassTokenAtPosition(document, position);
         if (!classToken) { return null; }
 
         const target = `.${classToken.value}`;
@@ -683,56 +871,87 @@ export function activate(context: vscode.ExtensionContext) {
     return isClassTokenCharacter(ch);
   }
 
-  function findExactClassTokenOffsets(text: string, token: string): number[] {
-    if (!token) { return []; }
+  function findStyleModuleClassTokenOffsets(
+    text: string,
+    token: string,
+    styleModuleIdentifiers: Set<string>,
+  ): number[] {
+    if (!token || styleModuleIdentifiers.size === 0) {
+      return [];
+    }
 
     const offsets: number[] = [];
-    let from = 0;
 
-    while (from < text.length) {
-      const idx = text.indexOf(token, from);
-      if (idx < 0) { break; }
-
-      const prev = idx > 0 ? text[idx - 1] : undefined;
-      const nextIdx = idx + token.length;
-      const next = nextIdx < text.length ? text[nextIdx] : undefined;
-
-      if (!isClassTokenChar(prev) && !isClassTokenChar(next)) {
-        offsets.push(idx);
+    for (const styleModuleIdentifier of styleModuleIdentifiers) {
+      const memberAccessPattern = new RegExp(
+        `\\b${escapeForRegExp(styleModuleIdentifier)}\\s*(?:\\?\\.|\\.)\\s*(${escapeForRegExp(token)})(?![A-Za-z0-9_$-])`,
+        'g',
+      );
+      let memberAccessMatch: RegExpExecArray | null;
+      while ((memberAccessMatch = memberAccessPattern.exec(text)) !== null) {
+        const tokenOffset = memberAccessMatch.index + memberAccessMatch[0].lastIndexOf(memberAccessMatch[1]);
+        offsets.push(tokenOffset);
       }
 
-      from = idx + token.length;
+      const bracketAccessPattern = new RegExp(
+        `\\b${escapeForRegExp(styleModuleIdentifier)}\\s*(?:\\?\\.)?\\[\\s*['"](${escapeForRegExp(token)})['"]\\s*\\]`,
+        'g',
+      );
+      let bracketAccessMatch: RegExpExecArray | null;
+      while ((bracketAccessMatch = bracketAccessPattern.exec(text)) !== null) {
+        const tokenOffset = bracketAccessMatch.index + bracketAccessMatch[0].lastIndexOf(bracketAccessMatch[1]);
+        offsets.push(tokenOffset);
+      }
     }
 
     return offsets;
   }
 
-  async function findLiteralClassTokenLocations(tokens: string[]): Promise<vscode.Location[]> {
+  async function findContextualClassTokenLocations(tokens: string[]): Promise<vscode.Location[]> {
     const uniqueTokens = Array.from(new Set(tokens.filter(Boolean)));
     if (uniqueTokens.length === 0) { return []; }
 
-    const files = await findWorkspaceFiles('**/*.{js,jsx,ts,tsx,html,htm}');
-
     const dedup = new Map<string, vscode.Location>();
+    const extractions = await getAllExtractions();
+
+    for (const extraction of extractions) {
+      const targetUri = vscode.Uri.file(extraction.filePath);
+      const targetDocument = await vscode.workspace.openTextDocument(targetUri);
+
+      for (const node of extraction.nodes) {
+        for (const [className, classOffset] of node.classOffsets) {
+          if (!uniqueTokens.includes(className)) {
+            continue;
+          }
+
+          const position = targetDocument.positionAt(classOffset);
+          const key = `${targetUri.toString()}:${position.line}:${position.character}`;
+          if (!dedup.has(key)) {
+            dedup.set(key, new vscode.Location(targetUri, position));
+          }
+        }
+      }
+    }
+
+    const files = await findWorkspaceFiles('**/*.{js,jsx,ts,tsx,html,htm}');
 
     for (const file of files) {
       const text = await readWorkspaceTextFile(
         file,
-        `findLiteralClassTokenLocations:readTemplateFile uri="${file.toString()}"`,
+        `findContextualClassTokenLocations:readTemplateFile uri="${file.toString()}"`,
       );
+      const styleModuleIdentifiers = getStyleModuleIdentifiers(text);
+      if (styleModuleIdentifiers.size === 0) {
+        continue;
+      }
+
+      const targetDocument = await vscode.workspace.openTextDocument(file);
 
       for (const token of uniqueTokens) {
-        const offsets = findExactClassTokenOffsets(text, token);
+        const offsets = findStyleModuleClassTokenOffsets(text, token, styleModuleIdentifiers);
         for (const offset of offsets) {
-          // Convert byte offset to line/column
-          let line = 0;
-          let lastNL = -1;
-          for (let i = 0; i < offset && i < text.length; i++) {
-            if (text[i] === '\n') { line++; lastNL = i; }
-          }
-          const column = offset - lastNL - 1;
-          const position = new vscode.Position(line, column);
-          const key = `${file.toString()}:${line}:${column}`;
+          const position = targetDocument.positionAt(offset);
+          const key = `${file.toString()}:${position.line}:${position.character}`;
           if (!dedup.has(key)) {
             dedup.set(key, new vscode.Location(file, position));
           }
@@ -883,9 +1102,9 @@ export function activate(context: vscode.ExtensionContext) {
         const matches = matchSelectorChainMulti(chain, extractions);
 
         if (matches.length === 0) {
-          // Fallback: exact literal class token search when structural matching
-          // found nothing (e.g. class used in a dynamic expression or plain string).
-          const fallbackLocations = await findLiteralClassTokenLocations(targetClasses);
+          // Fallback: search only in real class contexts when structural matching
+          // found nothing (e.g. incomplete structure or CSS module member access).
+          const fallbackLocations = await findContextualClassTokenLocations(targetClasses);
           return fallbackLocations.length > 0 ? fallbackLocations : null;
         }
 

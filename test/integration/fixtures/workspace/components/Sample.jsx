@@ -1,5 +1,6 @@
 // Used as a plain string, not in class/className — validates literal fallback
 const literalOnlyToken = 'literal-only';
+export const usersExternalCreate = () => 'not-a-style-target';
 
 export function Sample() {
   return (

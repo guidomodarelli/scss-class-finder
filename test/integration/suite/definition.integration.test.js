@@ -99,6 +99,31 @@ async function run() {
     );
   }
 
+  // --- Negative: plain JS identifiers must not navigate to matching SCSS class names ---
+  {
+    const jsxUri = vscode.Uri.file(
+      path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, 'components', 'Sample.jsx'),
+    );
+    const doc = await vscode.workspace.openTextDocument(jsxUri);
+    await vscode.window.showTextDocument(doc);
+
+    const text = doc.getText();
+    const idx = text.indexOf('usersExternalCreate');
+    assert.ok(idx >= 0, 'Expected to find "usersExternalCreate" in JSX fixture');
+    const pos = doc.positionAt(idx);
+
+    const locations = await vscode.commands.executeCommand(
+      'vscode.executeDefinitionProvider',
+      jsxUri,
+      pos,
+    );
+
+    assert.ok(
+      !locations || locations.length === 0,
+      'Expected plain JS identifiers to avoid SCSS class navigation',
+    );
+  }
+
   // --- HTML: "card-header" in HTML → .card-header in SCSS ---
   {
     const htmlUri = vscode.Uri.file(
