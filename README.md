@@ -37,7 +37,7 @@ And from that SCSS rule, `F12` / `Cmd+Click` navigates to:
 - 🔎 **Find All References** — use `Shift+F12` on a selector in SCSS/CSS to see all usages across JS/TS/JSX/TSX/HTML files.
 - 🏗️ **Structural matching** — reverse navigation respects CSS combinators: descendant (` `), child (`>`), adjacent sibling (`+`), and general sibling (`~`).
 - 📊 **Confidence scoring** — results are ranked by structural match quality: exact > structural > partial > probable.
-- 🎨 **Multiple class patterns** — detects `class`, `className`, template literals, and `clsx`/`classnames`/`cx` helpers.
+- 🎨 **Multiple class patterns** — detects `class`, `className`, template literals, default helpers like `clsx`/`classnames`/`cx`/`clx`/`cn`/`cw`, and configurable custom helpers.
 - 👁️ **Live preview** — navigating the results list previews each match in the editor.
 - ✏️ **Cursor-aware** — pre-fills the search input with the word under the cursor.
 - 🪶 **Zero dependencies** — custom single-pass lexer/parser, no external libraries. The packaged extension weighs ~15 KB.
@@ -105,6 +105,7 @@ The reverse navigation pipeline has four stages:
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
 | `scssClassFinder.previewOnResultFocus` | `boolean` | `true` | Automatically preview and reveal the selected result while navigating the results list |
+| `scssClassFinder.additionalClassNameHelpers` | `string[]` | `[]` | Additional JSX/TSX helper names treated like `clsx`/`classnames` when extracting CSS class usages |
 
 ## 🛠️ Development
 

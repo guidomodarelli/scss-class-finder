@@ -42,6 +42,14 @@
           "type": "boolean",
           "default": true,
           "description": "Automatically preview and reveal the selected result while navigating the results list."
+        },
+        "scssClassFinder.additionalClassNameHelpers": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "description": "Additional JSX/TSX helper names treated like clsx/classnames/cx when extracting CSS class usages."
         }
       }
     },

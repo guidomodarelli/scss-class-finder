@@ -38,6 +38,19 @@ export interface ExtractionResult {
   filePath: string;
 }
 
+export interface ExtractClassUsagesOptions {
+  additionalClassNameHelpers?: string[];
+}
+
+export const DEFAULT_CLASS_NAME_HELPERS = [
+  'clsx',
+  'classnames',
+  'cx',
+  'clx',
+  'cn',
+  'cw',
+];
+
 // ---------------------------------------------------------------------------
 // Main entry
 // ---------------------------------------------------------------------------
@@ -53,11 +66,12 @@ export function extractClassUsages(
   text: string,
   filePath: string,
   lang: 'html' | 'jsx' | 'tsx' | 'js' | 'ts',
+  options: ExtractClassUsagesOptions = {},
 ): ExtractionResult {
   if (lang === 'html') {
     return extractFromHTML(text, filePath);
   }
-  return extractFromJSX(text, filePath);
+  return extractFromJSX(text, filePath, options);
 }
 
 // ---------------------------------------------------------------------------
@@ -139,10 +153,35 @@ function extractFromHTML(text: string, filePath: string): ExtractionResult {
 // className="..." | className={'...'} | className={`...`}
 const CLASSNAME_LITERAL_RE = /\bclassName\s*=\s*(?:"([^"]*)"|'([^']*)'|\{['"]([^'"]*)['"]\}|\{\s*`([^`]*)`\s*\})/g;
 
-// clsx(...) or classnames(...) with string literal arguments
-const CLSX_RE = /\b(?:clsx|classnames|cx)\s*\(([^)]*)\)/g;
+function normalizeClassNameHelpers(options: ExtractClassUsagesOptions): string[] {
+  const mergedHelpers = [
+    ...DEFAULT_CLASS_NAME_HELPERS,
+    ...(options.additionalClassNameHelpers ?? []),
+  ];
 
-function extractFromJSX(text: string, filePath: string): ExtractionResult {
+  return Array.from(new Set(
+    mergedHelpers
+      .map((helperName) => helperName.trim())
+      .filter((helperName) => /^[A-Za-z_$][\w$]*$/.test(helperName)),
+  ));
+}
+
+function buildClassNameHelperPattern(helperNames: string[]): RegExp | null {
+  if (helperNames.length === 0) {
+    return null;
+  }
+
+  const escapedHelperNames = helperNames.map((helperName) =>
+    helperName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+
+  return new RegExp(`\\b(?:${escapedHelperNames.join('|')})\\s*\\(([^)]*)\\)`, 'g');
+}
+
+function extractFromJSX(
+  text: string,
+  filePath: string,
+  options: ExtractClassUsagesOptions,
+): ExtractionResult {
   const allNodes: ViewNode[] = [];
   const roots: ViewNode[] = [];
   const stack: ViewNode[] = [];
@@ -168,7 +207,7 @@ function extractFromJSX(text: string, filePath: string): ExtractionResult {
       const tagOffset = tagMatch.index + 1;
       const { line, column } = offsetToLC(text, tagMatch.index);
 
-      const classes = extractClassesFromJSXAttrs(attrsBlob);
+      const classes = extractClassesFromJSXAttrs(attrsBlob, options);
       const classOffsets = buildClassOffsetMap(text, tagMatch.index, classes);
 
       const parent = stack.length > 0 ? stack[stack.length - 1] : null;
@@ -222,7 +261,10 @@ function extractClassesFromAttrs(blob: string): string[] {
   return classes;
 }
 
-function extractClassesFromJSXAttrs(blob: string): string[] {
+function extractClassesFromJSXAttrs(
+  blob: string,
+  options: ExtractClassUsagesOptions,
+): string[] {
   const classes: string[] = [];
 
   // className="..." | className={'...'} | className={`...`}
@@ -235,25 +277,26 @@ function extractClassesFromJSXAttrs(blob: string): string[] {
     }
   }
 
-  // clsx / classnames / cx
-  const helperCallPattern = new RegExp(CLSX_RE.source, 'g');
-  while ((attributeMatch = helperCallPattern.exec(blob)) !== null) {
-    const helperArguments = attributeMatch[1];
-    // Extract string literal arguments: 'foo', "bar"
-    const stringLiteralPattern = /['"]([^'"]+)['"]/g;
-    let helperMatch: RegExpExecArray | null;
-    while ((helperMatch = stringLiteralPattern.exec(helperArguments)) !== null) {
-      for (const className of helperMatch[1].split(/\s+/)) {
-        if (className) { classes.push(className); }
+  const helperCallPattern = buildClassNameHelperPattern(normalizeClassNameHelpers(options));
+  if (helperCallPattern) {
+    while ((attributeMatch = helperCallPattern.exec(blob)) !== null) {
+      const helperArguments = attributeMatch[1];
+      // Extract string literal arguments: 'foo', "bar"
+      const stringLiteralPattern = /['"]([^'"]+)['"]/g;
+      let helperMatch: RegExpExecArray | null;
+      while ((helperMatch = stringLiteralPattern.exec(helperArguments)) !== null) {
+        for (const className of helperMatch[1].split(/\s+/)) {
+          if (className) { classes.push(className); }
+        }
       }
-    }
-    // Extract template literal static parts: `foo bar`
-    const templateLiteralPattern = /`([^`]*)`/g;
-    while ((helperMatch = templateLiteralPattern.exec(helperArguments)) !== null) {
-      // Remove ${...} expressions and split remaining parts
-      const staticParts = helperMatch[1].replace(/\$\{[^}]*\}/g, ' ');
-      for (const className of staticParts.split(/\s+/)) {
-        if (className) { classes.push(className); }
+      // Extract template literal static parts: `foo bar`
+      const templateLiteralPattern = /`([^`]*)`/g;
+      while ((helperMatch = templateLiteralPattern.exec(helperArguments)) !== null) {
+        // Remove ${...} expressions and split remaining parts
+        const staticParts = helperMatch[1].replace(/\$\{[^}]*\}/g, ' ');
+        for (const className of staticParts.split(/\s+/)) {
+          if (className) { classes.push(className); }
+        }
       }
     }
   }

@@ -230,6 +230,16 @@ interface FindClassCommandOptions {
   suppressNoResultsMessage?: boolean;
 }
 
+function getAdditionalClassNameHelpers(): string[] {
+  const configuredHelpers = vscode.workspace
+    .getConfiguration('scssClassFinder')
+    .get<string[]>('additionalClassNameHelpers', []);
+
+  return configuredHelpers
+    .map((helperName) => helperName.trim())
+    .filter((helperName) => /^[A-Za-z_$][\w$]*$/.test(helperName));
+}
+
 function getClassTokenAtPosition(
   document: vscode.TextDocument,
   position: vscode.Position,
@@ -402,7 +412,9 @@ async function getForwardDefinitionClassTokenAtPosition(
   const text = document.getText();
   const extractionLanguage = getDocumentExtractionLanguage(document);
   const extraction = extractionLanguage
-    ? extractClassUsages(text, document.uri.fsPath, extractionLanguage)
+    ? extractClassUsages(text, document.uri.fsPath, extractionLanguage, {
+      additionalClassNameHelpers: getAdditionalClassNameHelpers(),
+    })
     : null;
   const extractedClassToken = extraction
     ? findExtractedClassTokenAtOffset(extraction, offset)
@@ -845,7 +857,9 @@ export function activate(context: vscode.ExtensionContext) {
       uri,
       `getExtraction:readTemplateFile uri="${uri.toString()}"`,
     );
-    const result = extractClassUsages(text, uri.fsPath, lang);
+    const result = extractClassUsages(text, uri.fsPath, lang, {
+      additionalClassNameHelpers: getAdditionalClassNameHelpers(),
+    });
     extractionCache.set(key, result);
     return result;
   }

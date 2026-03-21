@@ -12,6 +12,15 @@ export function Sample() {
   );
 }
 
+export function HelperAliases({ active }) {
+  return (
+    <>
+      <section className={cw('wizard-card', active && 'wizard-card--active')}>Wizard</section>
+      <section className={styleNames('configurable-badge')}>Badge</section>
+    </>
+  );
+}
+
 export function Layout() {
   return (
     <div className="wrapper">

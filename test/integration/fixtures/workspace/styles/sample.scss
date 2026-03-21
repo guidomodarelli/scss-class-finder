@@ -63,6 +63,14 @@
   display: block;
 }
 
+.wizard-card {
+  border: 1px solid royalblue;
+}
+
+.configurable-badge {
+  border-radius: 999px;
+}
+
 .card {
   &__access-row {
     gap: var(--brand-spacing-16, 16px);

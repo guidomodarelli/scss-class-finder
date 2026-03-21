@@ -185,6 +185,74 @@ async function run() {
     }
   }
 
+  // --- Default helper aliases: "cw" should resolve class definitions from JSX ---
+  {
+    const jsxUri = vscode.Uri.file(
+      path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, 'components', 'Sample.jsx'),
+    );
+    const doc = await vscode.workspace.openTextDocument(jsxUri);
+    await vscode.window.showTextDocument(doc);
+
+    const text = doc.getText();
+    const idx = text.indexOf('wizard-card');
+    assert.ok(idx >= 0, 'Expected to find "wizard-card" in JSX fixture');
+    const pos = doc.positionAt(idx + 2);
+
+    const locations = await vscode.commands.executeCommand(
+      'vscode.executeDefinitionProvider',
+      jsxUri,
+      pos,
+    );
+
+    assert.ok(locations && locations.length > 0, 'Expected at least one definition for "wizard-card" from cw()');
+    assert.ok(
+      locations.some((loc) => loc.uri.fsPath.endsWith(path.join('styles', 'sample.scss'))),
+      `Expected cw() helper resolution to point to sample.scss, got: ${(locations ?? []).map((loc) => loc.uri.fsPath).join(', ')}`,
+    );
+  }
+
+  // --- Configurable helper aliases: custom helpers should resolve after config update ---
+  {
+    const config = vscode.workspace.getConfiguration('scssClassFinder');
+    const previousHelpers = config.get('additionalClassNameHelpers');
+
+    try {
+      await config.update('additionalClassNameHelpers', ['styleNames'], vscode.ConfigurationTarget.Workspace);
+
+      const jsxUri = vscode.Uri.file(
+        path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, 'components', 'Sample.jsx'),
+      );
+      const doc = await vscode.workspace.openTextDocument(jsxUri);
+      await vscode.window.showTextDocument(doc);
+
+      const text = doc.getText();
+      const idx = text.indexOf('configurable-badge');
+      assert.ok(idx >= 0, 'Expected to find "configurable-badge" in JSX fixture');
+      const pos = doc.positionAt(idx + 3);
+
+      const locations = await vscode.commands.executeCommand(
+        'vscode.executeDefinitionProvider',
+        jsxUri,
+        pos,
+      );
+
+      assert.ok(
+        locations && locations.length > 0,
+        'Expected configurable helper alias to resolve SCSS definitions',
+      );
+      assert.ok(
+        locations.some((loc) => loc.uri.fsPath.endsWith(path.join('styles', 'sample.scss'))),
+        `Expected configurable helper alias to point to sample.scss, got: ${(locations ?? []).map((loc) => loc.uri.fsPath).join(', ')}`,
+      );
+    } finally {
+      await config.update(
+        'additionalClassNameHelpers',
+        previousHelpers,
+        vscode.ConfigurationTarget.Workspace,
+      );
+    }
+  }
+
   // --- Negative: "icon" should NOT match .btn:has(.icon) as a definition ---
   {
     const jsxUri = vscode.Uri.file(

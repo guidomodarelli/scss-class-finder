@@ -184,6 +184,40 @@ test('extractClassUsages: JSX classnames helper', () => {
   assert.ok(classNames.includes('primary'));
 });
 
+test('extractClassUsages: JSX common helper aliases are supported by default', () => {
+  const jsx = `export function App() {
+  return (
+    <>
+      <div className={clx('card', 'ghost')}>A</div>
+      <div className={cn('chip')}>B</div>
+      <div className={cw('toolbar-item')}>C</div>
+    </>
+  );
+}`;
+
+  const result = extractClassUsages(jsx, 'App.jsx', 'jsx');
+  const classNames = result.nodes.map((n) => n.classes).flat();
+
+  assert.ok(classNames.includes('card'));
+  assert.ok(classNames.includes('ghost'));
+  assert.ok(classNames.includes('chip'));
+  assert.ok(classNames.includes('toolbar-item'));
+});
+
+test('extractClassUsages: JSX supports configured helper aliases', () => {
+  const jsx = `export function App() {
+  return <div className={styleNames('banner', 'banner--active')}>Hello</div>;
+}`;
+
+  const result = extractClassUsages(jsx, 'App.jsx', 'jsx', {
+    additionalClassNameHelpers: ['styleNames'],
+  });
+  const classNames = result.nodes.map((n) => n.classes).flat();
+
+  assert.ok(classNames.includes('banner'));
+  assert.ok(classNames.includes('banner--active'));
+});
+
 // ---------------------------------------------------------------------------
 // TSX extraction (same logic, different lang hint)
 // ---------------------------------------------------------------------------
